@@ -1,6 +1,6 @@
-import fs from 'node:fs' // 파일 읽기, 쓰기, 이동 등 폴더/파일을 다루는 도구
-import path from 'node:path' // 파일 경로를 안전하게 합쳐주는 도구
-import os from 'node:os' // 내 컴퓨터 운영체제 정보를 가져오는 도구
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
 
 // 1. 바탕화면 및 문서 보관함 경로 설정
 const desktop = path.join(os.homedir(), 'Desktop')
@@ -17,21 +17,18 @@ const KEYWORD_MAP: Record<string, string[]> = {
 }
 
 export interface CleanResult {
-  total: number // 대상 파일 총 개수
-  success: number // 이동 성공
-  skip: number // 사용 중이라 건너뜀
-  error: number // 오류 발생
-  logs: string[] // 화면 콘솔에 띄워줄 글씨들
+  total: number
+  success: number
+  skip: number
+  error: number
+  logs: string[]
 }
 
 export interface RestoreResult {
-  restored: number // 복원 성공 개수
-  logs: string[] // 화면 콘솔에 띄워줄 글씨들
+  restored: number
+  logs: string[]
 }
 
-// ------------------------------------------------------------------
-// [도움 함수] 중복 파일명 방지기
-// ------------------------------------------------------------------
 function getUniquePath(folder: string, filename: string): string {
   const ext = path.extname(filename)
   const name = path.basename(filename, ext)
@@ -45,9 +42,6 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-// ------------------------------------------------------------------
-// [기능 1] 바탕화면 문서 자동 정리
-// ------------------------------------------------------------------
 export function organizeFiles(): CleanResult {
   const logs: string[] = []
 
@@ -114,9 +108,7 @@ export function organizeFiles(): CleanResult {
       success += 1
       logs.push(`[이동 완료] ${filename}`)
     } catch (unknownError) {
-      // any 대신 Node.js의 공식 에러 타입으로 변환하여 안전하게 처리합니다.
       const err = unknownError as NodeJS.ErrnoException
-
       if (err.code === 'EBUSY' || err.code === 'EPERM') {
         skip += 1
         logs.push(`[사용 중/권한 없음] ${filename}`)
@@ -130,9 +122,6 @@ export function organizeFiles(): CleanResult {
   return { total: moveList.length, success, skip, error: errorCount, logs }
 }
 
-// ------------------------------------------------------------------
-// [기능 2] 문서 보관함에서 바탕화면으로 복원
-// ------------------------------------------------------------------
 export function restoreFiles(): RestoreResult {
   const logs: string[] = []
 
@@ -162,7 +151,6 @@ export function restoreFiles(): RestoreResult {
           restored += 1
           logs.push(`[복원 완료] ${originalName}`)
         } catch (unknownError) {
-          // 여기서도 any를 없애고 타입 안전성을 챙겼습니다.
           const err = unknownError as NodeJS.ErrnoException
           logs.push(`[오류] ${originalName} - ${err.message || String(unknownError)}`)
         }
