@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from 'react'
-import { FolderKanban, Settings, RotateCcw, Sparkles, Terminal } from 'lucide-react'
+import { FolderKanban, Settings, RotateCcw, Sparkles, Terminal, Plus, X } from 'lucide-react'
 
 function App(): ReactElement {
   const [activeTab, setActiveTab] = useState('clean')
@@ -13,11 +13,29 @@ function App(): ReactElement {
     restored?: number
   } | null>(null)
 
+  //  1. 설정 탭에서 사용할 상태(State) 추가
+  const [keywords, setKeywords] = useState<string[]>(['최종', '수정', '완성'])
+  const [newKeyword, setNewKeyword] = useState('')
+
+  // 2. 키워드 추가/삭제 함수
+  const handleAddKeyword = (): void => {
+    if (newKeyword.trim() === '') return
+    if (!keywords.includes(newKeyword.trim())) {
+      setKeywords([...keywords, newKeyword.trim()])
+    }
+    setNewKeyword('')
+  }
+
+  const handleRemoveKeyword = (keywordToRemove: string): void => {
+    setKeywords(keywords.filter((k) => k !== keywordToRemove))
+  }
+
   const handleClean = async (): Promise<void> => {
     setIsLoading(true)
     setStats(null)
     setLogs(['문서 정리를 시작합니다...'])
     try {
+      // 나중에는 여기에 keywords 배열도 같이 넘겨주도록 수정할 예정입니다!
       const result = await window.electron.ipcRenderer.invoke('clean-files')
       setStats({
         total: result.total,
@@ -49,9 +67,8 @@ function App(): ReactElement {
   }
 
   return (
-    // 전체 화면을 화면 꽉 차게(h-screen) 잡고, 전체 스크롤을 막습니다(overflow-hidden)
     <div className="flex h-screen bg-gray-50 text-gray-800 font-sans overflow-hidden">
-      {/*  왼쪽 사이드바 */}
+      {/* 👈 왼쪽 사이드바 */}
       <aside className="w-48 md:w-64 shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 transition-all">
         <div className="p-4 md:p-6 flex items-center gap-3 border-b border-gray-100">
           <div className="bg-blue-600 p-2 rounded-xl shadow-blue-200 shadow-sm shrink-0">
@@ -84,17 +101,16 @@ function App(): ReactElement {
             }`}
           >
             <Settings size={18} />
-            <span className="truncate">설정 (준비중)</span>
+            <span className="truncate">맞춤 설정</span>
           </button>
         </nav>
       </aside>
 
-      {/* 오른쪽 메인 화면 영역 (스크롤은 내부에서만 돌게 설정) */}
+      {/* 👉 오른쪽 메인 화면 영역 */}
       <main className="flex-1 flex flex-col p-4 md:p-6 lg:p-8 min-w-0">
+        {/* [파일 정리 탭] */}
         {activeTab === 'clean' && (
-          // flex-col과 h-full을 주어 내부 요소들이 위아래 공간을 나눠 쓰게 만듭니다.
           <div className="flex flex-col h-full max-w-5xl w-full mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* 상단 제목 부분 (공간 고정: shrink-0) */}
             <div className="shrink-0 mb-4 md:mb-6">
               <h2 className="text-2xl md:text-3xl font-bold mb-1 tracking-tight">
                 바탕화면을 깨끗하게 ✨
@@ -104,9 +120,7 @@ function App(): ReactElement {
               </p>
             </div>
 
-            {/* 가운데 카드 & 요약 영역 (공간 고정: shrink-0) */}
             <div className="shrink-0">
-              {/* 버튼 2개 카드 (창이 작아지면 1줄로 변경: md:grid-cols-2) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
                 <div className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center hover:shadow-md transition-all group">
                   <div className="bg-blue-50 text-blue-600 p-3 rounded-2xl mb-3 group-hover:scale-110 transition-transform duration-300">
@@ -143,7 +157,6 @@ function App(): ReactElement {
                 </div>
               </div>
 
-              {/* 결과 요약 (있을 때만 등장) */}
               {stats && (
                 <div className="mb-4 md:mb-6 p-4 md:p-5 bg-white border border-gray-100 rounded-2xl shadow-sm animate-in fade-in slide-in-from-bottom-2">
                   <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
@@ -185,7 +198,6 @@ function App(): ReactElement {
               )}
             </div>
 
-            {/*  하단 작업 로그창 (남은 공간을 모두 차지하도록 flex-1 및 min-h-0 적용) */}
             <div className="flex-1 min-h-0 bg-[#1e1e1e] rounded-2xl overflow-hidden shadow-lg border border-gray-800 flex flex-col">
               <div className="shrink-0 bg-[#2d2d2d] px-4 py-2 flex items-center gap-2 border-b border-gray-700">
                 <Terminal size={14} className="text-gray-400" />
@@ -209,15 +221,70 @@ function App(): ReactElement {
           </div>
         )}
 
+        {/*  [새로 추가된 맞춤 설정 탭] */}
         {activeTab === 'settings' && (
-          <div className="max-w-3xl mx-auto mt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-3xl font-bold mb-2 tracking-tight">맞춤 설정 ⚙️</h2>
-            <p className="text-gray-500 mb-10 text-lg">나만의 정리 규칙을 만들어보세요.</p>
-            <div className="bg-white p-10 rounded-2xl shadow-sm border border-gray-100 text-center">
-              <Settings className="mx-auto text-gray-300 mb-4 animate-spin-slow" size={48} />
-              <p className="text-gray-500 font-medium">
-                현재 키워드 및 확장자 커스텀 기능을 준비 중입니다!
+          <div className="flex flex-col h-full max-w-5xl w-full mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="shrink-0 mb-6">
+              <h2 className="text-2xl md:text-3xl font-bold mb-1 tracking-tight">맞춤 설정 ⚙️</h2>
+              <p className="text-gray-500 text-sm md:text-base">
+                나만의 파일 정리 규칙을 만들어보세요.
               </p>
+            </div>
+
+            <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100 flex-1 min-h-0 overflow-y-auto">
+              {/* 키워드 설정 섹션 */}
+              <div className="mb-8">
+                <h3 className="text-lg font-bold text-gray-800 mb-2">정리할 파일명 키워드</h3>
+                <p className="text-gray-500 text-sm mb-4">
+                  아래 키워드가 파일명에 포함되어 있으면 정리 대상이 됩니다.
+                </p>
+
+                {/* 입력창 & 버튼 */}
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
+                    placeholder="예: 초안, 복사본"
+                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                  <button
+                    onClick={handleAddKeyword}
+                    className="bg-gray-800 hover:bg-gray-900 text-white px-5 py-2.5 rounded-xl transition-colors font-medium flex items-center gap-2"
+                  >
+                    <Plus size={18} />
+                    추가
+                  </button>
+                </div>
+
+                {/* 태그 목록 */}
+                <div className="flex flex-wrap gap-2">
+                  {keywords.map((keyword, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100 animate-in zoom-in duration-200"
+                    >
+                      <span className="font-medium text-sm">{keyword}</span>
+                      <button
+                        onClick={() => handleRemoveKeyword(keyword)}
+                        className="text-blue-400 hover:text-blue-600 hover:bg-blue-100 p-0.5 rounded-md transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {keywords.length === 0 && (
+                    <span className="text-gray-400 text-sm italic">등록된 키워드가 없습니다.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 확장자 설정 섹션 (UI만 먼저 만들어두기) */}
+              <div className="pt-6 border-t border-gray-100">
+                <h3 className="text-lg font-bold text-gray-800 mb-2">정리할 확장자 (준비중)</h3>
+                <p className="text-gray-500 text-sm">곧 업데이트될 기능입니다.</p>
+              </div>
             </div>
           </div>
         )}
