@@ -7,8 +7,10 @@ import { organizeFiles, restoreFiles } from './cleaner'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 900, // 처음 열릴 때 넉넉한 너비
+    height: 650, // 처음 열릴 때 넉넉한 높이
+    minWidth: 500, // 레이아웃이 깨지지 않는 최소 너비 방어선
+    minHeight: 400, // 최소 높이 방어선
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
