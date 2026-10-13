@@ -6,15 +6,8 @@ import os from 'node:os'
 const desktop = path.join(os.homedir(), 'Desktop')
 const historyFolder = path.join(desktop, '문서 보관함')
 
-// 2. 정리할 파일의 확장자 목록
+// 2. 정리할 파일의 확장자 목록 (이 부분도 추후 커스텀 가능하도록 뺄 수 있습니다)
 const EXTENSIONS = new Set(['.pdf', '.docx', '.pptx', '.hwp', '.xlsx'])
-
-// 3. 파일 이름에 포함되어 있는지 검사할 키워드들
-const KEYWORD_MAP: Record<string, string[]> = {
-  최종: ['최종', '완성', 'final', 'finished', 'release'],
-  수정: ['수정', 'edit', 'edited', 'ver', 'version', 'rev', 'revision', 'update', 'updated'],
-  복사본: ['복사본', 'copy', 'backup', 'duplicate']
-}
 
 export interface CleanResult {
   total: number
@@ -42,11 +35,23 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-export function organizeFiles(): CleanResult {
+// 3. 0개의 인수 에러 해결: keywords 배열을 매개변수로 받도록 수정
+export function organizeFiles(keywords: string[] = []): CleanResult {
   const logs: string[] = []
 
   if (!fs.existsSync(desktop)) {
     return { total: 0, success: 0, skip: 0, error: 0, logs: ['바탕화면 경로를 찾을 수 없습니다.'] }
+  }
+
+  // 프론트엔드에서 넘어온 키워드가 하나도 없을 경우의 예외 처리
+  if (keywords.length === 0) {
+    return {
+      total: 0,
+      success: 0,
+      skip: 0,
+      error: 0,
+      logs: ['설정된 키워드가 없습니다. 설정 탭에서 키워드를 추가해주세요.']
+    }
   }
 
   const entries = fs.readdirSync(desktop, { withFileTypes: true })
@@ -61,9 +66,10 @@ export function organizeFiles(): CleanResult {
     const lower = entry.name.toLowerCase()
     let category: string | null = null
 
-    for (const [cat, words] of Object.entries(KEYWORD_MAP)) {
-      if (words.some((w) => lower.includes(w.toLowerCase()))) {
-        category = cat
+    // 4. 하드코딩 제거: 사용자가 설정한 키워드 배열을 순회하며 검사
+    for (const keyword of keywords) {
+      if (lower.includes(keyword.toLowerCase())) {
+        category = keyword // 매칭된 키워드 자체를 분류(폴더명)로 사용
         break
       }
     }
@@ -95,6 +101,7 @@ export function organizeFiles(): CleanResult {
       const ym = `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}`
       const prefix = `${ym}-${String(mtime.getDate()).padStart(2, '0')}`
 
+      // 폴더 구조: 문서 보관함 / 키워드(예: 초안) / 연-월 / 파일들
       const targetDir = path.join(historyFolder, category, ym)
       fs.mkdirSync(targetDir, { recursive: true })
 
@@ -106,7 +113,7 @@ export function organizeFiles(): CleanResult {
 
       fs.renameSync(filepath, destination)
       success += 1
-      logs.push(`[이동 완료] ${filename}`)
+      logs.push(`[이동 완료] ${filename} -> ${category} 폴더`)
     } catch (unknownError) {
       const err = unknownError as NodeJS.ErrnoException
       if (err.code === 'EBUSY' || err.code === 'EPERM') {
@@ -114,7 +121,7 @@ export function organizeFiles(): CleanResult {
         logs.push(`[사용 중/권한 없음] ${filename}`)
       } else {
         errorCount += 1
-        logs.push(`[오류] ${filename} - ${err.message || String(unknownError)}`)
+        logs.push(`[오류] ${filename}\n${err.message || String(unknownError)}`)
       }
     }
   }
@@ -152,7 +159,7 @@ export function restoreFiles(): RestoreResult {
           logs.push(`[복원 완료] ${originalName}`)
         } catch (unknownError) {
           const err = unknownError as NodeJS.ErrnoException
-          logs.push(`[오류] ${originalName} - ${err.message || String(unknownError)}`)
+          logs.push(`[오류] ${originalName}\n${err.message || String(unknownError)}`)
         }
       }
     }

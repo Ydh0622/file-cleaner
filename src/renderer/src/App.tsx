@@ -35,8 +35,7 @@ function App(): ReactElement {
     setStats(null)
     setLogs(['문서 정리를 시작합니다...'])
     try {
-      // 나중에는 여기에 keywords 배열도 같이 넘겨주도록 수정할 예정입니다!
-      const result = await window.electron.ipcRenderer.invoke('clean-files')
+      const result = await window.electron.ipcRenderer.invoke('clean-files', keywords)
       setStats({
         total: result.total,
         success: result.success,
