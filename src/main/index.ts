@@ -43,8 +43,8 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.handle('clean-files', async (_event, keywords) => {
-    const result = await organizeFiles(keywords)
+  ipcMain.handle('clean-files', async (_event, keywords, extensions) => {
+    const result = await organizeFiles(keywords, extensions)
     return result
   })
   ipcMain.handle('restore-files', () => {

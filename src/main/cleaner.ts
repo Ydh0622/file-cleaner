@@ -6,9 +6,6 @@ import os from 'node:os'
 const desktop = path.join(os.homedir(), 'Desktop')
 const historyFolder = path.join(desktop, '문서 보관함')
 
-// 2. 정리할 파일의 확장자 목록 (이 부분도 추후 커스텀 가능하도록 뺄 수 있습니다)
-const EXTENSIONS = new Set(['.pdf', '.docx', '.pptx', '.hwp', '.xlsx'])
-
 export interface CleanResult {
   total: number
   success: number
@@ -35,24 +32,26 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-// 3. 0개의 인수 에러 해결: keywords 배열을 매개변수로 받도록 수정
-export function organizeFiles(keywords: string[] = []): CleanResult {
+// 2. keywords와 extensions 배열을 모두 매개변수로 받도록 수정
+export function organizeFiles(keywords: string[] = [], extensions: string[] = []): CleanResult {
   const logs: string[] = []
 
   if (!fs.existsSync(desktop)) {
     return { total: 0, success: 0, skip: 0, error: 0, logs: ['바탕화면 경로를 찾을 수 없습니다.'] }
   }
 
-  // 프론트엔드에서 넘어온 키워드가 하나도 없을 경우의 예외 처리
-  if (keywords.length === 0) {
+  if (keywords.length === 0 || extensions.length === 0) {
     return {
       total: 0,
       success: 0,
       skip: 0,
       error: 0,
-      logs: ['설정된 키워드가 없습니다. 설정 탭에서 키워드를 추가해주세요.']
+      logs: ['키워드나 확장자가 설정되지 않았습니다. 설정 탭을 확인해주세요.']
     }
   }
+
+  // 전달받은 확장자 배열을 소문자 Set으로 변환
+  const extSet = new Set(extensions.map((e) => e.toLowerCase()))
 
   const entries = fs.readdirSync(desktop, { withFileTypes: true })
   const moveList: Array<{ filepath: string; filename: string; category: string }> = []
@@ -61,15 +60,14 @@ export function organizeFiles(keywords: string[] = []): CleanResult {
     if (!entry.isFile()) continue
 
     const ext = path.extname(entry.name).toLowerCase()
-    if (!EXTENSIONS.has(ext)) continue
+    if (!extSet.has(ext)) continue
 
     const lower = entry.name.toLowerCase()
     let category: string | null = null
 
-    // 4. 하드코딩 제거: 사용자가 설정한 키워드 배열을 순회하며 검사
     for (const keyword of keywords) {
       if (lower.includes(keyword.toLowerCase())) {
-        category = keyword // 매칭된 키워드 자체를 분류(폴더명)로 사용
+        category = keyword
         break
       }
     }
@@ -101,7 +99,6 @@ export function organizeFiles(keywords: string[] = []): CleanResult {
       const ym = `${mtime.getFullYear()}-${String(mtime.getMonth() + 1).padStart(2, '0')}`
       const prefix = `${ym}-${String(mtime.getDate()).padStart(2, '0')}`
 
-      // 폴더 구조: 문서 보관함 / 키워드(예: 초안) / 연-월 / 파일들
       const targetDir = path.join(historyFolder, category, ym)
       fs.mkdirSync(targetDir, { recursive: true })
 
@@ -147,8 +144,8 @@ export function restoreFiles(): RestoreResult {
       if (entry.isDirectory()) {
         traverseAndRestore(fullPath)
       } else if (entry.isFile()) {
-        const ext = path.extname(entry.name).toLowerCase()
-        if (!EXTENSIONS.has(ext)) continue
+        // 운영체제 시스템 파일(desktop.ini, .DS_Store 등)은 복원 대상에서 제외
+        if (entry.name.startsWith('.') || entry.name.toLowerCase() === 'desktop.ini') continue
 
         const originalName = entry.name.replace(/^\d{4}-\d{2}-\d{2}_/, '')
         const destination = getUniquePath(desktop, originalName)
