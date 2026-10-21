@@ -2,7 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-// 기본 경로 (전달받은 폴더 경로가 없을 때 사용할 예비 경로)
 const defaultDesktop = path.join(os.homedir(), 'Desktop')
 
 export interface CleanResult {
@@ -31,7 +30,6 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-// 1. 세 번째 매개변수로 targetFolder를 받도록 추가
 export function organizeFiles(
   keywords: string[] = [],
   extensions: string[] = [],
@@ -39,7 +37,6 @@ export function organizeFiles(
 ): CleanResult {
   const logs: string[] = []
 
-  // 전달받은 폴더가 있으면 사용하고, 없으면 기본 바탕화면 사용
   const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
   const historyFolder = path.join(currentTarget, '문서 보관함')
 
@@ -144,7 +141,6 @@ export function organizeFiles(
   return { total: moveList.length, success, skip, error: errorCount, logs }
 }
 
-// 2. 복원 함수도 targetFolder를 받아 해당 폴더의 '문서 보관함'에서 꺼내오도록 수정
 export function restoreFiles(targetFolder?: string): RestoreResult {
   const logs: string[] = []
 
@@ -164,7 +160,20 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
       const fullPath = path.join(currentDir, entry.name)
 
       if (entry.isDirectory()) {
+        // 1. 하위 폴더 안으로 들어가서 파일들을 먼저 복원합니다.
         traverseAndRestore(fullPath)
+
+        // 2. 복원 후 해당 하위 폴더에 남은 일반 파일이 있는지 확인하고, 비어있다면 폴더를 삭제합니다.
+        try {
+          const remaining = fs
+            .readdirSync(fullPath)
+            .filter((name) => !name.startsWith('.') && name.toLowerCase() !== 'desktop.ini')
+          if (remaining.length === 0) {
+            fs.rmSync(fullPath, { recursive: true, force: true })
+          }
+        } catch {
+          // 폴더가 이미 삭제되었거나 사용 중인 경우 무시
+        }
       } else if (entry.isFile()) {
         if (entry.name.startsWith('.') || entry.name.toLowerCase() === 'desktop.ini') continue
 
@@ -184,5 +193,19 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
   }
 
   traverseAndRestore(historyFolder)
+
+  // 3. 마지막으로 최상위 '문서 보관함' 폴더 자체도 텅 비었다면 깔끔하게 삭제합니다.
+  try {
+    const remainingRoot = fs
+      .readdirSync(historyFolder)
+      .filter((name) => !name.startsWith('.') && name.toLowerCase() !== 'desktop.ini')
+    if (remainingRoot.length === 0) {
+      fs.rmSync(historyFolder, { recursive: true, force: true })
+      logs.push('[정리 완료] 비어있는 문서 보관함 폴더를 삭제했습니다.')
+    }
+  } catch {
+    // 무시
+  }
+
   return { restored, logs }
 }
