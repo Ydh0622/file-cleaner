@@ -1,62 +1,118 @@
 import { useState, useEffect, type ReactElement } from 'react'
-import { FolderKanban, Settings, RotateCcw, Sparkles, Terminal, Plus, X } from 'lucide-react'
+import {
+  FolderKanban,
+  Settings,
+  RotateCcw,
+  Sparkles,
+  Terminal,
+  Plus,
+  X,
+  FolderOpen
+} from 'lucide-react'
+
+interface CleanStats {
+  total?: number
+  success?: number
+  skip?: number
+  error?: number
+  restored?: number
+}
 
 function App(): ReactElement {
-  const [activeTab, setActiveTab] = useState('clean')
+  const [activeTab, setActiveTab] = useState<string>('clean')
   const [logs, setLogs] = useState<string[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [stats, setStats] = useState<{
-    total?: number
-    success?: number
-    skip?: number
-    error?: number
-    restored?: number
-  } | null>(null)
+  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [stats, setStats] = useState<CleanStats | null>(null)
+
+  const [targetFolder, setTargetFolder] = useState<string>(() => {
+    return localStorage.getItem('cleaner_target_folder') || ''
+  })
 
   const [keywords, setKeywords] = useState<string[]>(() => {
     const saved = localStorage.getItem('cleaner_keywords')
-    return saved ? JSON.parse(saved) : ['최종', '수정', '완성']
+    return saved ? (JSON.parse(saved) as string[]) : ['최종', '수정', '완성']
   })
-  const [newKeyword, setNewKeyword] = useState('')
+  const [newKeyword, setNewKeyword] = useState<string>('')
 
   const [extensions, setExtensions] = useState<string[]>(() => {
     const saved = localStorage.getItem('cleaner_extensions')
-    return saved ? JSON.parse(saved) : ['.pdf', '.docx', '.pptx', '.hwp', '.xlsx']
+    return saved ? (JSON.parse(saved) as string[]) : ['.pdf', '.docx', '.pptx', '.hwp', '.xlsx']
   })
-  const [newExtension, setNewExtension] = useState('')
+  const [newExtension, setNewExtension] = useState<string>('')
 
-  useEffect(() => {
+  useEffect((): void => {
+    if (!targetFolder) {
+      window.electron.ipcRenderer
+        .invoke('get-default-folder')
+        .then((defaultPath: unknown): void => {
+          if (typeof defaultPath === 'string' && defaultPath) {
+            setTargetFolder(defaultPath)
+          }
+        })
+        .catch((): void => {
+          // 초기 경로 로드 실패 시 무시
+        })
+    }
+  }, [targetFolder])
+
+  useEffect((): void => {
+    if (targetFolder) {
+      localStorage.setItem('cleaner_target_folder', targetFolder)
+    }
+  }, [targetFolder])
+
+  useEffect((): void => {
     localStorage.setItem('cleaner_keywords', JSON.stringify(keywords))
   }, [keywords])
 
-  useEffect(() => {
+  useEffect((): void => {
     localStorage.setItem('cleaner_extensions', JSON.stringify(extensions))
   }, [extensions])
 
+  const handleSelectFolder = async (): Promise<void> => {
+    const selected = (await window.electron.ipcRenderer.invoke('select-folder')) as string | null
+    if (selected) {
+      setTargetFolder(selected)
+    }
+  }
+
   const handleAddKeyword = (): void => {
     if (newKeyword.trim() === '') return
-    if (!keywords.includes(newKeyword.trim())) setKeywords([...keywords, newKeyword.trim()])
+    if (!keywords.includes(newKeyword.trim())) {
+      setKeywords([...keywords, newKeyword.trim()])
+    }
     setNewKeyword('')
   }
-  const handleRemoveKeyword = (keywordToRemove: string): void =>
+
+  const handleRemoveKeyword = (keywordToRemove: string): void => {
     setKeywords(keywords.filter((k) => k !== keywordToRemove))
+  }
 
   const handleAddExtension = (): void => {
     let ext = newExtension.trim().toLowerCase()
     if (ext === '') return
     if (!ext.startsWith('.')) ext = `.${ext}`
-    if (!extensions.includes(ext)) setExtensions([...extensions, ext])
+    if (!extensions.includes(ext)) {
+      setExtensions([...extensions, ext])
+    }
     setNewExtension('')
   }
-  const handleRemoveExtension = (extToRemove: string): void =>
+
+  const handleRemoveExtension = (extToRemove: string): void => {
     setExtensions(extensions.filter((e) => e !== extToRemove))
+  }
 
   const handleClean = async (): Promise<void> => {
     setIsLoading(true)
     setStats(null)
     setLogs(['문서 정리를 시작합니다...'])
     try {
-      const result = await window.electron.ipcRenderer.invoke('clean-files', keywords, extensions)
+      const result = await window.electron.ipcRenderer.invoke(
+        'clean-files',
+        keywords,
+        extensions,
+        targetFolder
+      )
       setStats({
         total: result.total,
         success: result.success,
@@ -76,7 +132,7 @@ function App(): ReactElement {
     setStats(null)
     setLogs(['문서 복원을 시작합니다...'])
     try {
-      const result = await window.electron.ipcRenderer.invoke('restore-files')
+      const result = await window.electron.ipcRenderer.invoke('restore-files', targetFolder)
       setStats({ restored: result.restored })
       setLogs(result.logs)
     } catch (err) {
@@ -88,7 +144,6 @@ function App(): ReactElement {
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-800 font-sans overflow-hidden">
-      {/* 왼쪽 사이드바 (창이 작아지면 너비도 좁아지게 설정) */}
       <aside className="w-40 sm:w-52 md:w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 transition-all">
         <div className="p-3 sm:p-5 flex items-center gap-2.5 border-b border-gray-100">
           <div className="bg-blue-600 p-1.5 sm:p-2 rounded-xl shadow-blue-200 shadow-sm shrink-0">
@@ -100,14 +155,14 @@ function App(): ReactElement {
         </div>
         <nav className="flex-1 p-2 sm:p-3 space-y-1">
           <button
-            onClick={() => setActiveTab('clean')}
+            onClick={(): void => setActiveTab('clean')}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${activeTab === 'clean' ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'hover:bg-gray-50 text-gray-500'}`}
           >
             <FolderKanban size={16} />
             <span className="truncate">파일 정리</span>
           </button>
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={(): void => setActiveTab('settings')}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${activeTab === 'settings' ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'hover:bg-gray-50 text-gray-500'}`}
           >
             <Settings size={16} />
@@ -116,19 +171,36 @@ function App(): ReactElement {
         </nav>
       </aside>
 
-      {/* 오른쪽 메인 화면 영역 (패딩을 줄여서 내부 공간 확보) */}
       <main className="flex-1 flex flex-col p-3 sm:p-5 md:p-6 min-w-0 h-full overflow-hidden">
         {activeTab === 'clean' && (
-          <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-3 sm:gap-4">
-            {/* 1. 상단 타이틀 (간격 최소화) */}
+          <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-2.5 sm:gap-3.5">
             <div className="shrink-0">
-              <h2 className="text-lg sm:text-2xl font-bold tracking-tight">바탕화면을 깨끗하게</h2>
+              <h2 className="text-lg sm:text-2xl font-bold tracking-tight">폴더를 깨끗하게</h2>
               <p className="text-gray-500 text-xs sm:text-sm">
-                어지러운 바탕화면의 문서들을 스마트하게 정리해보세요.
+                지정한 폴더의 어지러운 문서들을 스마트하게 정리해보세요.
               </p>
             </div>
 
-            {/* 2. 액션 카드 영역 (세로 공간 절약을 위해 컴팩트한 디자인 적용, 항상 2열 유지) */}
+            <div className="shrink-0 bg-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FolderOpen size={16} className="text-blue-600 shrink-0" />
+                <span className="text-xs text-gray-400 shrink-0 hidden sm:inline">대상 폴더:</span>
+                <span
+                  className="text-xs sm:text-sm font-medium text-gray-700 truncate"
+                  title={targetFolder}
+                >
+                  {targetFolder || '경로 불러오는 중...'}
+                </span>
+              </div>
+              <button
+                onClick={handleSelectFolder}
+                disabled={isLoading}
+                className="shrink-0 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                폴더 변경
+              </button>
+            </div>
+
             <div className="shrink-0 grid grid-cols-2 gap-2.5 sm:gap-4">
               <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between hover:shadow-md transition-all">
                 <div className="flex items-center gap-2.5 sm:gap-3 mb-2.5 sm:mb-3">
@@ -159,7 +231,7 @@ function App(): ReactElement {
                   <div className="min-w-0">
                     <h3 className="text-sm sm:text-base font-bold truncate">원래대로 복원</h3>
                     <p className="text-gray-400 text-xs truncate hidden sm:block">
-                      보관함 파일을 바탕화면으로 복구
+                      보관함 파일을 원래 폴더로 복구
                     </p>
                   </div>
                 </div>
@@ -173,7 +245,6 @@ function App(): ReactElement {
               </div>
             </div>
 
-            {/* 3. 작업 결과 요약 (높이를 아주 얇게 압축) */}
             {stats && (
               <div className="shrink-0 p-2.5 sm:p-3.5 bg-white border border-gray-100 rounded-xl shadow-sm">
                 {stats.restored !== undefined ? (
@@ -212,7 +283,6 @@ function App(): ReactElement {
               </div>
             )}
 
-            {/* 4. 작업 로그창 (최소 높이 min-h-[120px] 보장 및 남은 공간 100% 차지) */}
             <div className="flex-1 min-h-[120px] bg-[#1e1e1e] rounded-xl overflow-hidden shadow-md border border-gray-800 flex flex-col">
               <div className="shrink-0 bg-[#2d2d2d] px-3 py-1.5 flex items-center gap-2 border-b border-gray-700">
                 <Terminal size={13} className="text-gray-400" />
@@ -257,8 +327,10 @@ function App(): ReactElement {
                   <input
                     type="text"
                     value={newKeyword}
-                    onChange={(e) => setNewKeyword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
+                    onChange={(e): void => setNewKeyword(e.target.value)}
+                    onKeyDown={(e): void => {
+                      if (e.key === 'Enter') handleAddKeyword()
+                    }}
                     placeholder="예: 초안, 복사본"
                     className="flex-1 px-3 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   />
@@ -278,7 +350,7 @@ function App(): ReactElement {
                     >
                       <span className="font-medium text-xs">{keyword}</span>
                       <button
-                        onClick={() => handleRemoveKeyword(keyword)}
+                        onClick={(): void => handleRemoveKeyword(keyword)}
                         className="text-blue-400 hover:text-blue-600 p-0.5"
                       >
                         <X size={12} />
@@ -302,8 +374,10 @@ function App(): ReactElement {
                   <input
                     type="text"
                     value={newExtension}
-                    onChange={(e) => setNewExtension(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddExtension()}
+                    onChange={(e): void => setNewExtension(e.target.value)}
+                    onKeyDown={(e): void => {
+                      if (e.key === 'Enter') handleAddExtension()
+                    }}
                     placeholder="예: png, zip"
                     className="flex-1 px-3 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                   />
@@ -323,7 +397,7 @@ function App(): ReactElement {
                     >
                       <span className="font-medium text-xs">{ext}</span>
                       <button
-                        onClick={() => handleRemoveExtension(ext)}
+                        onClick={(): void => handleRemoveExtension(ext)}
                         className="text-gray-400 hover:text-gray-600 p-0.5"
                       >
                         <X size={12} />

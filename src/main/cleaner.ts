@@ -2,9 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-// 1. 바탕화면 및 문서 보관함 경로 설정
-const desktop = path.join(os.homedir(), 'Desktop')
-const historyFolder = path.join(desktop, '문서 보관함')
+// 기본 경로 (전달받은 폴더 경로가 없을 때 사용할 예비 경로)
+const defaultDesktop = path.join(os.homedir(), 'Desktop')
 
 export interface CleanResult {
   total: number
@@ -32,12 +31,26 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-// 2. keywords와 extensions 배열을 모두 매개변수로 받도록 수정
-export function organizeFiles(keywords: string[] = [], extensions: string[] = []): CleanResult {
+// 1. 세 번째 매개변수로 targetFolder를 받도록 추가
+export function organizeFiles(
+  keywords: string[] = [],
+  extensions: string[] = [],
+  targetFolder?: string
+): CleanResult {
   const logs: string[] = []
 
-  if (!fs.existsSync(desktop)) {
-    return { total: 0, success: 0, skip: 0, error: 0, logs: ['바탕화면 경로를 찾을 수 없습니다.'] }
+  // 전달받은 폴더가 있으면 사용하고, 없으면 기본 바탕화면 사용
+  const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
+  const historyFolder = path.join(currentTarget, '문서 보관함')
+
+  if (!fs.existsSync(currentTarget)) {
+    return {
+      total: 0,
+      success: 0,
+      skip: 0,
+      error: 0,
+      logs: ['지정된 폴더 경로를 찾을 수 없습니다.']
+    }
   }
 
   if (keywords.length === 0 || extensions.length === 0) {
@@ -50,10 +63,9 @@ export function organizeFiles(keywords: string[] = [], extensions: string[] = []
     }
   }
 
-  // 전달받은 확장자 배열을 소문자 Set으로 변환
   const extSet = new Set(extensions.map((e) => e.toLowerCase()))
 
-  const entries = fs.readdirSync(desktop, { withFileTypes: true })
+  const entries = fs.readdirSync(currentTarget, { withFileTypes: true })
   const moveList: Array<{ filepath: string; filename: string; category: string }> = []
 
   for (const entry of entries) {
@@ -74,7 +86,7 @@ export function organizeFiles(keywords: string[] = [], extensions: string[] = []
 
     if (category) {
       moveList.push({
-        filepath: path.join(desktop, entry.name),
+        filepath: path.join(currentTarget, entry.name),
         filename: entry.name,
         category
       })
@@ -82,7 +94,13 @@ export function organizeFiles(keywords: string[] = [], extensions: string[] = []
   }
 
   if (moveList.length === 0) {
-    return { total: 0, success: 0, skip: 0, error: 0, logs: ['바탕화면에 정리할 문서가 없습니다.'] }
+    return {
+      total: 0,
+      success: 0,
+      skip: 0,
+      error: 0,
+      logs: ['선택한 폴더에 정리할 문서가 없습니다.']
+    }
   }
 
   fs.mkdirSync(historyFolder, { recursive: true })
@@ -126,11 +144,15 @@ export function organizeFiles(keywords: string[] = [], extensions: string[] = []
   return { total: moveList.length, success, skip, error: errorCount, logs }
 }
 
-export function restoreFiles(): RestoreResult {
+// 2. 복원 함수도 targetFolder를 받아 해당 폴더의 '문서 보관함'에서 꺼내오도록 수정
+export function restoreFiles(targetFolder?: string): RestoreResult {
   const logs: string[] = []
 
+  const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
+  const historyFolder = path.join(currentTarget, '문서 보관함')
+
   if (!fs.existsSync(historyFolder)) {
-    return { restored: 0, logs: ['문서 보관함 폴더가 없습니다.'] }
+    return { restored: 0, logs: ['선택한 폴더 내에 문서 보관함 폴더가 없습니다.'] }
   }
 
   let restored = 0
@@ -144,11 +166,10 @@ export function restoreFiles(): RestoreResult {
       if (entry.isDirectory()) {
         traverseAndRestore(fullPath)
       } else if (entry.isFile()) {
-        // 운영체제 시스템 파일(desktop.ini, .DS_Store 등)은 복원 대상에서 제외
         if (entry.name.startsWith('.') || entry.name.toLowerCase() === 'desktop.ini') continue
 
         const originalName = entry.name.replace(/^\d{4}-\d{2}-\d{2}_/, '')
-        const destination = getUniquePath(desktop, originalName)
+        const destination = getUniquePath(currentTarget, originalName)
 
         try {
           fs.renameSync(fullPath, destination)
