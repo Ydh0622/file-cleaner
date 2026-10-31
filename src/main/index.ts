@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
-import os from 'node:os' // 기본 바탕화면 경로를 가져오기 위해 추가
+import os from 'node:os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -44,24 +44,27 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // 1. 기본 바탕화면 경로를 프론트엔드에 알려주는 채널
   ipcMain.handle('get-default-folder', () => {
     return join(os.homedir(), 'Desktop')
   })
 
-  // 2. 윈도우 폴더 선택창을 띄우고 선택된 경로를 반환하는 채널
   ipcMain.handle('select-folder', async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory'], // 파일이 아닌 '폴더'만 선택 가능하게 설정
+      properties: ['openDirectory'],
       title: '정리할 대상 폴더를 선택하세요'
     })
 
-    // 사용자가 취소를 눌렀거나 선택한 폴더가 없으면 null 반환
     if (result.canceled || result.filePaths.length === 0) {
       return null
     }
-    // 선택한 첫 번째 폴더의 경로 반환
     return result.filePaths[0]
+  })
+
+  // 👇 새로 추가된 부분: 전달받은 경로의 폴더를 윈도우 탐색기로 바로 엽니다.
+  ipcMain.handle('open-folder', async (_event, folderPath: string) => {
+    if (folderPath) {
+      await shell.openPath(folderPath)
+    }
   })
 
   ipcMain.handle('clean-files', async (_event, keywords, extensions, targetFolder) => {

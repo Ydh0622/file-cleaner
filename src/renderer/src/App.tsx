@@ -7,7 +7,8 @@ import {
   Terminal,
   Plus,
   X,
-  FolderOpen
+  FolderOpen,
+  ExternalLink
 } from 'lucide-react'
 
 interface CleanStats {
@@ -73,6 +74,13 @@ function App(): ReactElement {
     const selected = (await window.electron.ipcRenderer.invoke('select-folder')) as string | null
     if (selected) {
       setTargetFolder(selected)
+    }
+  }
+
+  // 👇 새로 추가된 함수: 현재 선택된 대상 폴더를 윈도우 탐색기로 엽니다.
+  const handleOpenFolder = async (): Promise<void> => {
+    if (targetFolder) {
+      await window.electron.ipcRenderer.invoke('open-folder', targetFolder)
     }
   }
 
@@ -192,13 +200,25 @@ function App(): ReactElement {
                   {targetFolder || '경로 불러오는 중...'}
                 </span>
               </div>
-              <button
-                onClick={handleSelectFolder}
-                disabled={isLoading}
-                className="shrink-0 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                폴더 변경
-              </button>
+              {/* 👇 폴더 열기 버튼과 폴더 변경 버튼을 나란히 배치 */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={handleOpenFolder}
+                  disabled={!targetFolder}
+                  className="bg-blue-50 hover:bg-blue-100 disabled:opacity-50 text-blue-600 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                  title="윈도우 탐색기로 폴더 열기"
+                >
+                  <ExternalLink size={13} />
+                  <span>폴더 열기</span>
+                </button>
+                <button
+                  onClick={handleSelectFolder}
+                  disabled={isLoading}
+                  className="bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  폴더 변경
+                </button>
+              </div>
             </div>
 
             <div className="shrink-0 grid grid-cols-2 gap-2.5 sm:gap-4">
