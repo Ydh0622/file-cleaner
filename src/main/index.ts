@@ -4,7 +4,7 @@ import os from 'node:os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-import { organizeFiles, restoreFiles } from './cleaner'
+import { organizeFiles, restoreFiles, scanFiles } from './cleaner'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -60,17 +60,27 @@ app.whenReady().then(() => {
     return result.filePaths[0]
   })
 
-  // 👇 새로 추가된 부분: 전달받은 경로의 폴더를 윈도우 탐색기로 바로 엽니다.
   ipcMain.handle('open-folder', async (_event, folderPath: string) => {
     if (folderPath) {
       await shell.openPath(folderPath)
     }
   })
 
-  ipcMain.handle('clean-files', async (_event, keywords, extensions, targetFolder) => {
-    const result = await organizeFiles(keywords, extensions, targetFolder)
-    return result
-  })
+  // 정리 대상 파일 목록을 미리 스캔하여 반환하는 채널
+  ipcMain.handle(
+    'preview-files',
+    (_event, keywords, extensions, targetFolder, includeUnmatched) => {
+      return scanFiles(keywords, extensions, targetFolder, includeUnmatched)
+    }
+  )
+
+  ipcMain.handle(
+    'clean-files',
+    async (_event, keywords, extensions, targetFolder, includeUnmatched) => {
+      const result = await organizeFiles(keywords, extensions, targetFolder, includeUnmatched)
+      return result
+    }
+  )
 
   ipcMain.handle('restore-files', (_event, targetFolder) => {
     return restoreFiles(targetFolder)

@@ -17,6 +17,17 @@ export interface RestoreResult {
   logs: string[]
 }
 
+export interface PreviewItem {
+  filepath: string
+  filename: string
+  category: string
+}
+
+export interface PreviewResult {
+  items: PreviewItem[]
+  errorMessage?: string
+}
+
 function getUniquePath(folder: string, filename: string): string {
   const ext = path.extname(filename)
   const name = path.basename(filename, ext)
@@ -30,40 +41,29 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-export function organizeFiles(
+// 정리 대상 파일을 탐색만 하고 실제로 이동하지는 않는 미리보기 함수
+export function scanFiles(
   keywords: string[] = [],
   extensions: string[] = [],
-  targetFolder?: string
-): CleanResult {
-  const logs: string[] = []
-
+  targetFolder?: string,
+  includeUnmatched: boolean = false
+): PreviewResult {
   const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
-  const historyFolder = path.join(currentTarget, '문서 보관함')
 
   if (!fs.existsSync(currentTarget)) {
-    return {
-      total: 0,
-      success: 0,
-      skip: 0,
-      error: 0,
-      logs: ['지정된 폴더 경로를 찾을 수 없습니다.']
-    }
+    return { items: [], errorMessage: '지정된 폴더 경로를 찾을 수 없습니다.' }
   }
 
-  if (keywords.length === 0 || extensions.length === 0) {
+  if (extensions.length === 0 || (keywords.length === 0 && !includeUnmatched)) {
     return {
-      total: 0,
-      success: 0,
-      skip: 0,
-      error: 0,
-      logs: ['키워드나 확장자가 설정되지 않았습니다. 설정 탭을 확인해주세요.']
+      items: [],
+      errorMessage: '키워드나 확장자가 설정되지 않았습니다. 설정 탭을 확인해주세요.'
     }
   }
 
   const extSet = new Set(extensions.map((e) => e.toLowerCase()))
-
   const entries = fs.readdirSync(currentTarget, { withFileTypes: true })
-  const moveList: Array<{ filepath: string; filename: string; category: string }> = []
+  const items: PreviewItem[] = []
 
   for (const entry of entries) {
     if (!entry.isFile()) continue
@@ -81,14 +81,40 @@ export function organizeFiles(
       }
     }
 
+    if (!category && includeUnmatched) {
+      category = '기타 문서'
+    }
+
     if (category) {
-      moveList.push({
+      items.push({
         filepath: path.join(currentTarget, entry.name),
         filename: entry.name,
         category
       })
     }
   }
+
+  return { items }
+}
+
+// scanFiles 결과를 바탕으로 실제 파일 이동을 수행하는 함수
+export function organizeFiles(
+  keywords: string[] = [],
+  extensions: string[] = [],
+  targetFolder?: string,
+  includeUnmatched: boolean = false
+): CleanResult {
+  const logs: string[] = []
+  const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
+  const historyFolder = path.join(currentTarget, '문서 보관함')
+
+  const scanResult = scanFiles(keywords, extensions, targetFolder, includeUnmatched)
+
+  if (scanResult.errorMessage) {
+    return { total: 0, success: 0, skip: 0, error: 0, logs: [scanResult.errorMessage] }
+  }
+
+  const moveList = scanResult.items
 
   if (moveList.length === 0) {
     return {
@@ -160,10 +186,8 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
       const fullPath = path.join(currentDir, entry.name)
 
       if (entry.isDirectory()) {
-        // 1. 하위 폴더 안으로 들어가서 파일들을 먼저 복원합니다.
         traverseAndRestore(fullPath)
 
-        // 2. 복원 후 해당 하위 폴더에 남은 일반 파일이 있는지 확인하고, 비어있다면 폴더를 삭제합니다.
         try {
           const remaining = fs
             .readdirSync(fullPath)
@@ -172,7 +196,7 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
             fs.rmSync(fullPath, { recursive: true, force: true })
           }
         } catch {
-          // 폴더가 이미 삭제되었거나 사용 중인 경우 무시
+          // 무시
         }
       } else if (entry.isFile()) {
         if (entry.name.startsWith('.') || entry.name.toLowerCase() === 'desktop.ini') continue
@@ -194,7 +218,6 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
 
   traverseAndRestore(historyFolder)
 
-  // 3. 마지막으로 최상위 '문서 보관함' 폴더 자체도 텅 비었다면 깔끔하게 삭제합니다.
   try {
     const remainingRoot = fs
       .readdirSync(historyFolder)

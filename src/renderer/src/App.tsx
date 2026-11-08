@@ -8,7 +8,9 @@ import {
   Plus,
   X,
   FolderOpen,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  ArrowRight
 } from 'lucide-react'
 
 interface CleanStats {
@@ -19,11 +21,25 @@ interface CleanStats {
   restored?: number
 }
 
+interface PreviewItem {
+  filepath: string
+  filename: string
+  category: string
+}
+
+interface PreviewResult {
+  items: PreviewItem[]
+  errorMessage?: string
+}
+
 function App(): ReactElement {
   const [activeTab, setActiveTab] = useState<string>('clean')
   const [logs, setLogs] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [stats, setStats] = useState<CleanStats | null>(null)
+
+  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false)
+  const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
 
   const [targetFolder, setTargetFolder] = useState<string>(() => {
     return localStorage.getItem('cleaner_target_folder') || ''
@@ -40,6 +56,11 @@ function App(): ReactElement {
     return saved ? (JSON.parse(saved) as string[]) : ['.pdf', '.docx', '.pptx', '.hwp', '.xlsx']
   })
   const [newExtension, setNewExtension] = useState<string>('')
+
+  const [includeUnmatched, setIncludeUnmatched] = useState<boolean>(() => {
+    const saved = localStorage.getItem('cleaner_include_unmatched')
+    return saved ? (JSON.parse(saved) as boolean) : false
+  })
 
   useEffect((): void => {
     if (!targetFolder) {
@@ -70,6 +91,10 @@ function App(): ReactElement {
     localStorage.setItem('cleaner_extensions', JSON.stringify(extensions))
   }, [extensions])
 
+  useEffect((): void => {
+    localStorage.setItem('cleaner_include_unmatched', JSON.stringify(includeUnmatched))
+  }, [includeUnmatched])
+
   const handleSelectFolder = async (): Promise<void> => {
     const selected = (await window.electron.ipcRenderer.invoke('select-folder')) as string | null
     if (selected) {
@@ -77,7 +102,6 @@ function App(): ReactElement {
     }
   }
 
-  // 👇 새로 추가된 함수: 현재 선택된 대상 폴더를 윈도우 탐색기로 엽니다.
   const handleOpenFolder = async (): Promise<void> => {
     if (targetFolder) {
       await window.electron.ipcRenderer.invoke('open-folder', targetFolder)
@@ -110,7 +134,33 @@ function App(): ReactElement {
     setExtensions(extensions.filter((e) => e !== extToRemove))
   }
 
+  const handlePreview = async (): Promise<void> => {
+    setIsLoading(true)
+    try {
+      const result = (await window.electron.ipcRenderer.invoke(
+        'preview-files',
+        keywords,
+        extensions,
+        targetFolder,
+        includeUnmatched
+      )) as PreviewResult
+
+      if (result.errorMessage) {
+        setLogs([result.errorMessage])
+        return
+      }
+
+      setPreviewItems(result.items)
+      setIsPreviewOpen(true)
+    } catch (err) {
+      setLogs([`미리보기 중 오류가 발생했습니다: ${String(err)}`])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleClean = async (): Promise<void> => {
+    setIsPreviewOpen(false)
     setIsLoading(true)
     setStats(null)
     setLogs(['문서 정리를 시작합니다...'])
@@ -119,7 +169,8 @@ function App(): ReactElement {
         'clean-files',
         keywords,
         extensions,
-        targetFolder
+        targetFolder,
+        includeUnmatched
       )
       setStats({
         total: result.total,
@@ -200,7 +251,6 @@ function App(): ReactElement {
                   {targetFolder || '경로 불러오는 중...'}
                 </span>
               </div>
-              {/* 👇 폴더 열기 버튼과 폴더 변경 버튼을 나란히 배치 */}
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={handleOpenFolder}
@@ -234,13 +284,23 @@ function App(): ReactElement {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={handleClean}
-                  disabled={isLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold py-2 px-3 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
-                >
-                  {isLoading ? '처리 중...' : '정리 시작'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handlePreview}
+                    disabled={isLoading}
+                    className="flex-1 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 text-blue-700 font-semibold py-2 px-2.5 rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-1.5"
+                  >
+                    <Eye size={15} />
+                    <span>미리보기</span>
+                  </button>
+                  <button
+                    onClick={handleClean}
+                    disabled={isLoading}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold py-2 px-2.5 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
+                  >
+                    {isLoading ? '처리 중...' : '정리 시작'}
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between hover:shadow-md transition-all">
@@ -429,10 +489,98 @@ function App(): ReactElement {
                   )}
                 </div>
               </div>
+
+              <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-0.5">
+                    키워드 미포함 문서도 정리하기
+                  </h3>
+                  <p className="text-gray-500 text-xs">
+                    파일명에 키워드가 없더라도 지정된 확장자라면 &apos;기타 문서&apos; 폴더로 묶어서
+                    이동합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={(): void => setIncludeUnmatched(!includeUnmatched)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    includeUnmatched ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      includeUnmatched ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
         )}
       </main>
+
+      {isPreviewOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye size={18} className="text-blue-600" />
+                <h3 className="font-bold text-gray-800 text-base">
+                  정리 대상 미리보기 ({previewItems.length}건)
+                </h3>
+              </div>
+              <button
+                onClick={(): void => setIsPreviewOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {previewItems.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 text-sm">
+                  현재 설정된 규칙으로 정리할 수 있는 파일이 없습니다.
+                </div>
+              ) : (
+                previewItems.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm"
+                  >
+                    <span className="font-medium text-gray-700 truncate" title={item.filename}>
+                      {item.filename}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <ArrowRight size={14} className="text-gray-400" />
+                      <span className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-md font-semibold text-xs">
+                        {item.category} 폴더
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                onClick={(): void => setIsPreviewOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                닫기
+              </button>
+              {previewItems.length > 0 && (
+                <button
+                  onClick={handleClean}
+                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
+                >
+                  바로 정리 시작
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
