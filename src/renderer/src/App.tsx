@@ -10,7 +10,11 @@ import {
   FolderOpen,
   ExternalLink,
   Eye,
-  ArrowRight
+  ArrowRight,
+  Moon,
+  Sun,
+  Check,
+  Trash2
 } from 'lucide-react'
 
 interface CleanStats {
@@ -32,6 +36,13 @@ interface PreviewResult {
   errorMessage?: string
 }
 
+const EXTENSION_PRESETS: Array<{ label: string; exts: string[] }> = [
+  { label: '문서 세트', exts: ['.pdf', '.docx', '.pptx', '.hwp', '.xlsx', '.txt', '.csv'] },
+  { label: '이미지 세트', exts: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'] },
+  { label: '압축파일 세트', exts: ['.zip', '.7z', '.rar', '.tar', '.gz'] },
+  { label: '미디어 세트', exts: ['.mp4', '.mkv', '.avi', '.mp3', '.wav'] }
+]
+
 function App(): ReactElement {
   const [activeTab, setActiveTab] = useState<string>('clean')
   const [logs, setLogs] = useState<string[]>([])
@@ -40,6 +51,11 @@ function App(): ReactElement {
 
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false)
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
+
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('cleaner_dark_mode')
+    return saved ? (JSON.parse(saved) as boolean) : false
+  })
 
   const [targetFolder, setTargetFolder] = useState<string>(() => {
     return localStorage.getItem('cleaner_target_folder') || ''
@@ -76,6 +92,10 @@ function App(): ReactElement {
         })
     }
   }, [targetFolder])
+
+  useEffect((): void => {
+    localStorage.setItem('cleaner_dark_mode', JSON.stringify(isDarkMode))
+  }, [isDarkMode])
 
   useEffect((): void => {
     if (targetFolder) {
@@ -132,6 +152,17 @@ function App(): ReactElement {
 
   const handleRemoveExtension = (extToRemove: string): void => {
     setExtensions(extensions.filter((e) => e !== extToRemove))
+  }
+
+  // 프리셋 토글 핸들러: 모두 포함되어 있으면 일괄 제거, 아니면 일괄 추가
+  const handleTogglePreset = (presetExts: string[]): void => {
+    const isAllIncluded = presetExts.every((ext) => extensions.includes(ext))
+    if (isAllIncluded) {
+      setExtensions(extensions.filter((ext) => !presetExts.includes(ext)))
+    } else {
+      const merged = Array.from(new Set([...extensions, ...presetExts]))
+      setExtensions(merged)
+    }
   }
 
   const handlePreview = async (): Promise<void> => {
@@ -202,32 +233,82 @@ function App(): ReactElement {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-800 font-sans overflow-hidden">
-      <aside className="w-40 sm:w-52 md:w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 transition-all">
-        <div className="p-3 sm:p-5 flex items-center gap-2.5 border-b border-gray-100">
-          <div className="bg-blue-600 p-1.5 sm:p-2 rounded-xl shadow-blue-200 shadow-sm shrink-0">
+    <div
+      className={`flex h-screen font-sans overflow-hidden transition-colors duration-200 ${
+        isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-gray-50 text-gray-800'
+      }`}
+    >
+      <aside
+        className={`w-40 sm:w-52 md:w-60 shrink-0 border-r flex flex-col shadow-sm z-10 transition-colors duration-200 ${
+          isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+        }`}
+      >
+        <div
+          className={`p-3 sm:p-5 flex items-center gap-2.5 border-b ${
+            isDarkMode ? 'border-slate-700' : 'border-gray-100'
+          }`}
+        >
+          <div className="bg-blue-600 p-1.5 sm:p-2 rounded-xl shadow-sm shrink-0">
             <Sparkles className="text-white" size={18} />
           </div>
-          <h1 className="text-base sm:text-lg font-extrabold text-gray-800 tracking-tight truncate">
+          <h1 className="text-base sm:text-lg font-extrabold tracking-tight truncate">
             File Cleaner
           </h1>
         </div>
         <nav className="flex-1 p-2 sm:p-3 space-y-1">
           <button
             onClick={(): void => setActiveTab('clean')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${activeTab === 'clean' ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'hover:bg-gray-50 text-gray-500'}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${
+              activeTab === 'clean'
+                ? isDarkMode
+                  ? 'bg-blue-900/40 text-blue-400 border border-blue-800/60'
+                  : 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100'
+                : isDarkMode
+                  ? 'hover:bg-slate-700/60 text-slate-400'
+                  : 'hover:bg-gray-50 text-gray-500'
+            }`}
           >
             <FolderKanban size={16} />
             <span className="truncate">파일 정리</span>
           </button>
           <button
             onClick={(): void => setActiveTab('settings')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${activeTab === 'settings' ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' : 'hover:bg-gray-50 text-gray-500'}`}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all font-medium text-xs sm:text-sm ${
+              activeTab === 'settings'
+                ? isDarkMode
+                  ? 'bg-blue-900/40 text-blue-400 border border-blue-800/60'
+                  : 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100'
+                : isDarkMode
+                  ? 'hover:bg-slate-700/60 text-slate-400'
+                  : 'hover:bg-gray-50 text-gray-500'
+            }`}
           >
             <Settings size={16} />
             <span className="truncate">맞춤 설정</span>
           </button>
         </nav>
+
+        <div
+          className={`p-2 sm:p-3 border-t ${isDarkMode ? 'border-slate-700' : 'border-gray-100'}`}
+        >
+          <button
+            onClick={(): void => setIsDarkMode(!isDarkMode)}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors ${
+              isDarkMode
+                ? 'bg-slate-700/70 hover:bg-slate-700 text-slate-200'
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+          >
+            <span className="flex items-center gap-2 truncate">
+              {isDarkMode ? (
+                <Sun size={15} className="text-amber-400 shrink-0" />
+              ) : (
+                <Moon size={15} className="text-slate-600 shrink-0" />
+              )}
+              <span className="truncate">{isDarkMode ? '라이트 모드' : '다크 모드'}</span>
+            </span>
+          </button>
+        </div>
       </aside>
 
       <main className="flex-1 flex flex-col p-3 sm:p-5 md:p-6 min-w-0 h-full overflow-hidden">
@@ -235,17 +316,31 @@ function App(): ReactElement {
           <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-2.5 sm:gap-3.5">
             <div className="shrink-0">
               <h2 className="text-lg sm:text-2xl font-bold tracking-tight">폴더를 깨끗하게</h2>
-              <p className="text-gray-500 text-xs sm:text-sm">
+              <p
+                className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+              >
                 지정한 폴더의 어지러운 문서들을 스마트하게 정리해보세요.
               </p>
             </div>
 
-            <div className="shrink-0 bg-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between gap-2">
+            <div
+              className={`shrink-0 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border shadow-sm flex items-center justify-between gap-2 transition-colors ${
+                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
+              }`}
+            >
               <div className="flex items-center gap-2 min-w-0">
-                <FolderOpen size={16} className="text-blue-600 shrink-0" />
-                <span className="text-xs text-gray-400 shrink-0 hidden sm:inline">대상 폴더:</span>
+                <FolderOpen size={16} className="text-blue-500 shrink-0" />
                 <span
-                  className="text-xs sm:text-sm font-medium text-gray-700 truncate"
+                  className={`text-xs shrink-0 hidden sm:inline ${
+                    isDarkMode ? 'text-slate-400' : 'text-gray-400'
+                  }`}
+                >
+                  대상 폴더:
+                </span>
+                <span
+                  className={`text-xs sm:text-sm font-medium truncate ${
+                    isDarkMode ? 'text-slate-200' : 'text-gray-700'
+                  }`}
                   title={targetFolder}
                 >
                   {targetFolder || '경로 불러오는 중...'}
@@ -255,7 +350,11 @@ function App(): ReactElement {
                 <button
                   onClick={handleOpenFolder}
                   disabled={!targetFolder}
-                  className="bg-blue-50 hover:bg-blue-100 disabled:opacity-50 text-blue-600 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'bg-blue-900/40 hover:bg-blue-900/60 text-blue-400'
+                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600'
+                  }`}
                   title="윈도우 탐색기로 폴더 열기"
                 >
                   <ExternalLink size={13} />
@@ -264,7 +363,11 @@ function App(): ReactElement {
                 <button
                   onClick={handleSelectFolder}
                   disabled={isLoading}
-                  className="bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                  }`}
                 >
                   폴더 변경
                 </button>
@@ -272,14 +375,26 @@ function App(): ReactElement {
             </div>
 
             <div className="shrink-0 grid grid-cols-2 gap-2.5 sm:gap-4">
-              <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between hover:shadow-md transition-all">
+              <div
+                className={`p-3 sm:p-4 rounded-xl shadow-sm border flex flex-col justify-between hover:shadow-md transition-all ${
+                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100'
+                }`}
+              >
                 <div className="flex items-center gap-2.5 sm:gap-3 mb-2.5 sm:mb-3">
-                  <div className="bg-blue-50 text-blue-600 p-2 sm:p-2.5 rounded-xl shrink-0">
+                  <div
+                    className={`p-2 sm:p-2.5 rounded-xl shrink-0 ${
+                      isDarkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-50 text-blue-600'
+                    }`}
+                  >
                     <FolderKanban size={20} />
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm sm:text-base font-bold truncate">문서 정리하기</h3>
-                    <p className="text-gray-400 text-xs truncate hidden sm:block">
+                    <p
+                      className={`text-xs truncate hidden sm:block ${
+                        isDarkMode ? 'text-slate-400' : 'text-gray-400'
+                      }`}
+                    >
                       지정된 파일을 보관함으로 이동
                     </p>
                   </div>
@@ -288,7 +403,11 @@ function App(): ReactElement {
                   <button
                     onClick={handlePreview}
                     disabled={isLoading}
-                    className="flex-1 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 text-blue-700 font-semibold py-2 px-2.5 rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-1.5"
+                    className={`flex-1 font-semibold py-2 px-2.5 rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                      isDarkMode
+                        ? 'bg-slate-700 hover:bg-slate-600 text-blue-400'
+                        : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                    }`}
                   >
                     <Eye size={15} />
                     <span>미리보기</span>
@@ -296,21 +415,33 @@ function App(): ReactElement {
                   <button
                     onClick={handleClean}
                     disabled={isLoading}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white font-semibold py-2 px-2.5 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-2.5 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
                   >
                     {isLoading ? '처리 중...' : '정리 시작'}
                   </button>
                 </div>
               </div>
 
-              <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between hover:shadow-md transition-all">
+              <div
+                className={`p-3 sm:p-4 rounded-xl shadow-sm border flex flex-col justify-between hover:shadow-md transition-all ${
+                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100'
+                }`}
+              >
                 <div className="flex items-center gap-2.5 sm:gap-3 mb-2.5 sm:mb-3">
-                  <div className="bg-gray-100 text-gray-700 p-2 sm:p-2.5 rounded-xl shrink-0">
+                  <div
+                    className={`p-2 sm:p-2.5 rounded-xl shrink-0 ${
+                      isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
                     <RotateCcw size={20} />
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm sm:text-base font-bold truncate">원래대로 복원</h3>
-                    <p className="text-gray-400 text-xs truncate hidden sm:block">
+                    <p
+                      className={`text-xs truncate hidden sm:block ${
+                        isDarkMode ? 'text-slate-400' : 'text-gray-400'
+                      }`}
+                    >
                       보관함 파일을 원래 폴더로 복구
                     </p>
                   </div>
@@ -318,7 +449,11 @@ function App(): ReactElement {
                 <button
                   onClick={handleRestore}
                   disabled={isLoading}
-                  className="w-full bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-3 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
+                  className={`w-full font-semibold py-2 px-3 rounded-lg transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isDarkMode
+                      ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                      : 'bg-gray-800 hover:bg-gray-900 text-white'
+                  }`}
                 >
                   {isLoading ? '처리 중...' : '복원하기'}
                 </button>
@@ -326,37 +461,65 @@ function App(): ReactElement {
             </div>
 
             {stats && (
-              <div className="shrink-0 p-2.5 sm:p-3.5 bg-white border border-gray-100 rounded-xl shadow-sm">
+              <div
+                className={`shrink-0 p-2.5 sm:p-3.5 border rounded-xl shadow-sm ${
+                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100'
+                }`}
+              >
                 {stats.restored !== undefined ? (
-                  <div className="flex items-center justify-between px-3 py-1.5 bg-green-50 rounded-lg border border-green-100">
-                    <span className="font-medium text-xs sm:text-sm text-green-800">복원 성공</span>
-                    <span className="text-sm sm:text-base font-bold text-green-700">
-                      {stats.restored}건
-                    </span>
+                  <div
+                    className={`flex items-center justify-between px-3 py-1.5 rounded-lg border ${
+                      isDarkMode
+                        ? 'bg-emerald-950/50 border-emerald-800/60 text-emerald-300'
+                        : 'bg-green-50 border-green-100 text-green-800'
+                    }`}
+                  >
+                    <span className="font-medium text-xs sm:text-sm">복원 성공</span>
+                    <span className="text-sm sm:text-base font-bold">{stats.restored}건</span>
                   </div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
-                    <div className="py-1.5 px-2 bg-gray-50 rounded-lg flex items-center justify-between">
-                      <span className="text-xs text-gray-500">총 대상</span>
+                    <div
+                      className={`py-1.5 px-2 rounded-lg flex items-center justify-between ${
+                        isDarkMode ? 'bg-slate-700/60' : 'bg-gray-50'
+                      }`}
+                    >
+                      <span
+                        className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+                      >
+                        총 대상
+                      </span>
                       <span className="text-xs sm:text-sm font-bold">{stats.total}건</span>
                     </div>
-                    <div className="py-1.5 px-2 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between">
-                      <span className="text-xs text-blue-600">성공</span>
-                      <span className="text-xs sm:text-sm font-bold text-blue-700">
-                        {stats.success}건
-                      </span>
+                    <div
+                      className={`py-1.5 px-2 border rounded-lg flex items-center justify-between ${
+                        isDarkMode
+                          ? 'bg-blue-950/50 border-blue-800/60 text-blue-300'
+                          : 'bg-blue-50 border-blue-100 text-blue-700'
+                      }`}
+                    >
+                      <span className="text-xs">성공</span>
+                      <span className="text-xs sm:text-sm font-bold">{stats.success}건</span>
                     </div>
-                    <div className="py-1.5 px-2 bg-yellow-50 border border-yellow-100 rounded-lg flex items-center justify-between">
-                      <span className="text-xs text-yellow-600">건너뜀</span>
-                      <span className="text-xs sm:text-sm font-bold text-yellow-700">
-                        {stats.skip}건
-                      </span>
+                    <div
+                      className={`py-1.5 px-2 border rounded-lg flex items-center justify-between ${
+                        isDarkMode
+                          ? 'bg-amber-950/50 border-amber-800/60 text-amber-300'
+                          : 'bg-yellow-50 border-yellow-100 text-yellow-700'
+                      }`}
+                    >
+                      <span className="text-xs">건너뜀</span>
+                      <span className="text-xs sm:text-sm font-bold">{stats.skip}건</span>
                     </div>
-                    <div className="py-1.5 px-2 bg-red-50 border border-red-100 rounded-lg flex items-center justify-between">
-                      <span className="text-xs text-red-600">오류</span>
-                      <span className="text-xs sm:text-sm font-bold text-red-700">
-                        {stats.error}건
-                      </span>
+                    <div
+                      className={`py-1.5 px-2 border rounded-lg flex items-center justify-between ${
+                        isDarkMode
+                          ? 'bg-red-950/50 border-red-800/60 text-red-300'
+                          : 'bg-red-50 border-red-100 text-red-700'
+                      }`}
+                    >
+                      <span className="text-xs">오류</span>
+                      <span className="text-xs sm:text-sm font-bold">{stats.error}건</span>
                     </div>
                   </div>
                 )}
@@ -390,17 +553,33 @@ function App(): ReactElement {
           <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-3 sm:gap-4">
             <div className="shrink-0">
               <h2 className="text-lg sm:text-2xl font-bold tracking-tight">맞춤 설정</h2>
-              <p className="text-gray-500 text-xs sm:text-sm">
+              <p
+                className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+              >
                 나만의 파일 정리 규칙을 만들어보세요. (자동 저장됩니다)
               </p>
             </div>
 
-            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 flex-1 min-h-0 overflow-y-auto space-y-6">
+            <div
+              className={`p-4 sm:p-6 rounded-xl shadow-sm border flex-1 min-h-0 overflow-y-auto space-y-6 transition-colors ${
+                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-100'
+              }`}
+            >
               <div>
-                <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-1">
-                  정리할 파일명 키워드
-                </h3>
-                <p className="text-gray-500 text-xs mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm sm:text-base font-bold">정리할 파일명 키워드</h3>
+                  {keywords.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(): void => setKeywords([])}
+                      className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 font-medium"
+                    >
+                      <Trash2 size={12} />
+                      <span>전체 비우기</span>
+                    </button>
+                  )}
+                </div>
+                <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                   아래 키워드가 파일명에 포함되어 있으면 정리 대상이 됩니다.
                 </p>
                 <div className="flex gap-2 mb-3">
@@ -412,11 +591,15 @@ function App(): ReactElement {
                       if (e.key === 'Enter') handleAddKeyword()
                     }}
                     placeholder="예: 초안, 복사본"
-                    className="flex-1 px-3 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    className={`flex-1 px-3 py-2 text-xs sm:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500'
+                        : 'bg-gray-50 border-gray-200 text-gray-800'
+                    }`}
                   />
                   <button
                     onClick={handleAddKeyword}
-                    className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg transition-colors font-medium text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
                   >
                     <Plus size={16} />
                     추가
@@ -426,12 +609,16 @@ function App(): ReactElement {
                   {keywords.map((keyword, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-100"
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border ${
+                        isDarkMode
+                          ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
+                          : 'bg-blue-50 text-blue-700 border-blue-100'
+                      }`}
                     >
                       <span className="font-medium text-xs">{keyword}</span>
                       <button
                         onClick={(): void => handleRemoveKeyword(keyword)}
-                        className="text-blue-400 hover:text-blue-600 p-0.5"
+                        className="text-blue-400 hover:text-blue-500 p-0.5"
                       >
                         <X size={12} />
                       </button>
@@ -443,13 +630,54 @@ function App(): ReactElement {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-100">
-                <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-1">
-                  정리할 파일 확장자
-                </h3>
-                <p className="text-gray-500 text-xs mb-3">
-                  입력한 확장자를 가진 파일만 검사합니다. (예: png, mp4)
-                </p>
+              <div
+                className={`pt-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-gray-100'}`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <div>
+                    <div className="flex items-center gap-3 mb-0.5">
+                      <h3 className="text-sm sm:text-base font-bold">정리할 파일 확장자</h3>
+                      {extensions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={(): void => setExtensions([])}
+                          className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1 font-medium"
+                        >
+                          <Trash2 size={12} />
+                          <span>전체 비우기</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      프리셋 버튼을 누르면 세트가 추가되고, 한 번 더 누르면 해당 세트가 빠집니다.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {EXTENSION_PRESETS.map((preset, idx) => {
+                      const isAllIncluded = preset.exts.every((ext) => extensions.includes(ext))
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={(): void => handleTogglePreset(preset.exts)}
+                          className={`text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+                            isAllIncluded
+                              ? isDarkMode
+                                ? 'bg-blue-900/50 text-blue-300 border-blue-700 hover:bg-blue-900/70'
+                                : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                              : isDarkMode
+                                ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600'
+                                : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+                          }`}
+                        >
+                          {isAllIncluded ? <Check size={12} /> : <Plus size={12} />}
+                          <span>{preset.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <div className="flex gap-2 mb-3">
                   <input
                     type="text"
@@ -459,11 +687,15 @@ function App(): ReactElement {
                       if (e.key === 'Enter') handleAddExtension()
                     }}
                     placeholder="예: png, zip"
-                    className="flex-1 px-3 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    className={`flex-1 px-3 py-2 text-xs sm:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                      isDarkMode
+                        ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500'
+                        : 'bg-gray-50 border-gray-200 text-gray-800'
+                    }`}
                   />
                   <button
                     onClick={handleAddExtension}
-                    className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg transition-colors font-medium text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
                   >
                     <Plus size={16} />
                     추가
@@ -473,12 +705,16 @@ function App(): ReactElement {
                   {extensions.map((ext, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md border border-gray-200"
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border ${
+                        isDarkMode
+                          ? 'bg-slate-700 text-slate-200 border-slate-600'
+                          : 'bg-gray-100 text-gray-700 border-gray-200'
+                      }`}
                     >
                       <span className="font-medium text-xs">{ext}</span>
                       <button
                         onClick={(): void => handleRemoveExtension(ext)}
-                        className="text-gray-400 hover:text-gray-600 p-0.5"
+                        className="text-gray-400 hover:text-gray-300 p-0.5"
                       >
                         <X size={12} />
                       </button>
@@ -490,12 +726,16 @@ function App(): ReactElement {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
+              <div
+                className={`pt-4 border-t flex items-center justify-between gap-4 ${
+                  isDarkMode ? 'border-slate-700' : 'border-gray-100'
+                }`}
+              >
                 <div>
-                  <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-0.5">
+                  <h3 className="text-sm sm:text-base font-bold mb-0.5">
                     키워드 미포함 문서도 정리하기
                   </h3>
-                  <p className="text-gray-500 text-xs">
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                     파일명에 키워드가 없더라도 지정된 확장자라면 &apos;기타 문서&apos; 폴더로 묶어서
                     이동합니다.
                   </p>
@@ -504,7 +744,7 @@ function App(): ReactElement {
                   type="button"
                   onClick={(): void => setIncludeUnmatched(!includeUnmatched)}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    includeUnmatched ? 'bg-blue-600' : 'bg-gray-200'
+                    includeUnmatched ? 'bg-blue-600' : isDarkMode ? 'bg-slate-700' : 'bg-gray-200'
                   }`}
                 >
                   <span
@@ -520,18 +760,32 @@ function App(): ReactElement {
       </main>
 
       {isPreviewOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div
+            className={`rounded-2xl shadow-xl border w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden ${
+              isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-100'
+                : 'bg-white border-gray-100 text-gray-800'
+            }`}
+          >
+            <div
+              className={`px-5 py-4 border-b flex items-center justify-between ${
+                isDarkMode ? 'border-slate-700' : 'border-gray-100'
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <Eye size={18} className="text-blue-600" />
-                <h3 className="font-bold text-gray-800 text-base">
+                <Eye size={18} className="text-blue-500" />
+                <h3 className="font-bold text-base">
                   정리 대상 미리보기 ({previewItems.length}건)
                 </h3>
               </div>
               <button
                 onClick={(): void => setIsPreviewOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                className={`p-1 rounded-lg transition-colors ${
+                  isDarkMode
+                    ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
               >
                 <X size={18} />
               </button>
@@ -546,14 +800,24 @@ function App(): ReactElement {
                 previewItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm"
+                    className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border text-xs sm:text-sm ${
+                      isDarkMode
+                        ? 'bg-slate-900/60 border-slate-700 text-slate-200'
+                        : 'bg-gray-50 border-gray-100 text-gray-700'
+                    }`}
                   >
-                    <span className="font-medium text-gray-700 truncate" title={item.filename}>
+                    <span className="font-medium truncate" title={item.filename}>
                       {item.filename}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <ArrowRight size={14} className="text-gray-400" />
-                      <span className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-md font-semibold text-xs">
+                      <span
+                        className={`border px-2 py-0.5 rounded-md font-semibold text-xs ${
+                          isDarkMode
+                            ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
+                            : 'bg-blue-50 text-blue-700 border-blue-100'
+                        }`}
+                      >
                         {item.category} 폴더
                       </span>
                     </div>
@@ -562,10 +826,18 @@ function App(): ReactElement {
               )}
             </div>
 
-            <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+            <div
+              className={`px-5 py-3.5 border-t flex justify-end gap-2 ${
+                isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-gray-50 border-gray-100'
+              }`}
+            >
               <button
                 onClick={(): void => setIsPreviewOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs sm:text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors ${
+                  isDarkMode
+                    ? 'text-slate-300 hover:bg-slate-700'
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}
               >
                 닫기
               </button>
