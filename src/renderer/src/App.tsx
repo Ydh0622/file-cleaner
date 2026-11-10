@@ -14,7 +14,8 @@ import {
   Moon,
   Sun,
   Check,
-  Trash2
+  Trash2,
+  Undo2
 } from 'lucide-react'
 
 interface CleanStats {
@@ -48,9 +49,11 @@ function App(): ReactElement {
   const [logs, setLogs] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [stats, setStats] = useState<CleanStats | null>(null)
+  const [canUndo, setCanUndo] = useState<boolean>(false)
 
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false)
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
+  const [selectedFilepaths, setSelectedFilepaths] = useState<string[]>([])
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('cleaner_dark_mode')
@@ -154,7 +157,6 @@ function App(): ReactElement {
     setExtensions(extensions.filter((e) => e !== extToRemove))
   }
 
-  // 프리셋 토글 핸들러: 모두 포함되어 있으면 일괄 제거, 아니면 일괄 추가
   const handleTogglePreset = (presetExts: string[]): void => {
     const isAllIncluded = presetExts.every((ext) => extensions.includes(ext))
     if (isAllIncluded) {
@@ -182,6 +184,7 @@ function App(): ReactElement {
       }
 
       setPreviewItems(result.items)
+      setSelectedFilepaths(result.items.map((item) => item.filepath))
       setIsPreviewOpen(true)
     } catch (err) {
       setLogs([`미리보기 중 오류가 발생했습니다: ${String(err)}`])
@@ -190,7 +193,27 @@ function App(): ReactElement {
     }
   }
 
-  const handleClean = async (): Promise<void> => {
+  const handleToggleSelectFile = (filepath: string): void => {
+    if (selectedFilepaths.includes(filepath)) {
+      setSelectedFilepaths(selectedFilepaths.filter((path) => path !== filepath))
+    } else {
+      setSelectedFilepaths([...selectedFilepaths, filepath])
+    }
+  }
+
+  const handleToggleSelectAll = (): void => {
+    if (selectedFilepaths.length === previewItems.length) {
+      setSelectedFilepaths([])
+    } else {
+      setSelectedFilepaths(previewItems.map((item) => item.filepath))
+    }
+  }
+
+  const handleClean = async (onlySelected: boolean = false): Promise<void> => {
+    const selectedItemsToClean = onlySelected
+      ? previewItems.filter((item) => selectedFilepaths.includes(item.filepath))
+      : undefined
+
     setIsPreviewOpen(false)
     setIsLoading(true)
     setStats(null)
@@ -201,7 +224,8 @@ function App(): ReactElement {
         keywords,
         extensions,
         targetFolder,
-        includeUnmatched
+        includeUnmatched,
+        selectedItemsToClean
       )
       setStats({
         total: result.total,
@@ -210,6 +234,23 @@ function App(): ReactElement {
         error: result.error
       })
       setLogs(result.logs)
+      setCanUndo(Boolean(result.canUndo))
+    } catch (err) {
+      setLogs([`오류가 발생했습니다: ${String(err)}`])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleUndo = async (): Promise<void> => {
+    setIsLoading(true)
+    setStats(null)
+    setLogs(['직전 정리 작업을 되돌립니다...'])
+    try {
+      const result = await window.electron.ipcRenderer.invoke('undo-clean')
+      setStats({ restored: result.restored })
+      setLogs(result.logs)
+      setCanUndo(Boolean(result.canUndo))
     } catch (err) {
       setLogs([`오류가 발생했습니다: ${String(err)}`])
     } finally {
@@ -220,11 +261,12 @@ function App(): ReactElement {
   const handleRestore = async (): Promise<void> => {
     setIsLoading(true)
     setStats(null)
-    setLogs(['문서 복원을 시작합니다...'])
+    setLogs(['전체 문서 복원을 시작합니다...'])
     try {
       const result = await window.electron.ipcRenderer.invoke('restore-files', targetFolder)
       setStats({ restored: result.restored })
       setLogs(result.logs)
+      setCanUndo(Boolean(result.canUndo))
     } catch (err) {
       setLogs([`오류가 발생했습니다: ${String(err)}`])
     } finally {
@@ -413,7 +455,7 @@ function App(): ReactElement {
                     <span>미리보기</span>
                   </button>
                   <button
-                    onClick={handleClean}
+                    onClick={(): Promise<void> => handleClean(false)}
                     disabled={isLoading}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-2.5 rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
                   >
@@ -442,21 +484,40 @@ function App(): ReactElement {
                         isDarkMode ? 'text-slate-400' : 'text-gray-400'
                       }`}
                     >
-                      보관함 파일을 원래 폴더로 복구
+                      직전 작업 취소 또는 보관함 전체 복구
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={handleRestore}
-                  disabled={isLoading}
-                  className={`w-full font-semibold py-2 px-3 rounded-lg transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                    isDarkMode
-                      ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                      : 'bg-gray-800 hover:bg-gray-900 text-white'
-                  }`}
-                >
-                  {isLoading ? '처리 중...' : '복원하기'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleUndo}
+                    disabled={isLoading || !canUndo}
+                    title={
+                      canUndo
+                        ? '방금 정리한 파일만 원래대로 되돌립니다'
+                        : '되돌릴 직전 작업이 없습니다'
+                    }
+                    className={`flex-1 font-semibold py-2 px-2.5 rounded-lg transition-colors text-xs sm:text-sm flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+                      isDarkMode
+                        ? 'bg-amber-950/60 hover:bg-amber-900/70 text-amber-300 border border-amber-800/50'
+                        : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/60'
+                    }`}
+                  >
+                    <Undo2 size={15} />
+                    <span>되돌리기</span>
+                  </button>
+                  <button
+                    onClick={handleRestore}
+                    disabled={isLoading}
+                    className={`flex-1 font-semibold py-2 px-2.5 rounded-lg transition-colors shadow-sm text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isDarkMode
+                        ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                        : 'bg-gray-800 hover:bg-gray-900 text-white'
+                    }`}
+                  >
+                    {isLoading ? '처리 중...' : '전체 복원'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -776,7 +837,7 @@ function App(): ReactElement {
               <div className="flex items-center gap-2">
                 <Eye size={18} className="text-blue-500" />
                 <h3 className="font-bold text-base">
-                  정리 대상 미리보기 ({previewItems.length}건)
+                  정리 대상 미리보기 ({selectedFilepaths.length} / {previewItems.length}건 선택됨)
                 </h3>
               </div>
               <button
@@ -791,38 +852,72 @@ function App(): ReactElement {
               </button>
             </div>
 
+            {previewItems.length > 0 && (
+              <div
+                className={`px-5 py-2 border-b flex items-center justify-between text-xs ${
+                  isDarkMode ? 'bg-slate-900/40 border-slate-700' : 'bg-gray-50/80 border-gray-100'
+                }`}
+              >
+                <span className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>
+                  정리에서 제외할 파일은 체크를 해제하세요.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  className="text-blue-500 hover:text-blue-600 font-semibold"
+                >
+                  {selectedFilepaths.length === previewItems.length ? '전체 해제' : '전체 선택'}
+                </button>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {previewItems.length === 0 ? (
                 <div className="py-10 text-center text-gray-400 text-sm">
                   현재 설정된 규칙으로 정리할 수 있는 파일이 없습니다.
                 </div>
               ) : (
-                previewItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border text-xs sm:text-sm ${
-                      isDarkMode
-                        ? 'bg-slate-900/60 border-slate-700 text-slate-200'
-                        : 'bg-gray-50 border-gray-100 text-gray-700'
-                    }`}
-                  >
-                    <span className="font-medium truncate" title={item.filename}>
-                      {item.filename}
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <ArrowRight size={14} className="text-gray-400" />
-                      <span
-                        className={`border px-2 py-0.5 rounded-md font-semibold text-xs ${
-                          isDarkMode
-                            ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
-                            : 'bg-blue-50 text-blue-700 border-blue-100'
-                        }`}
-                      >
-                        {item.category} 폴더
-                      </span>
-                    </div>
-                  </div>
-                ))
+                previewItems.map((item, idx) => {
+                  const isSelected = selectedFilepaths.includes(item.filepath)
+                  return (
+                    <label
+                      key={idx}
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border text-xs sm:text-sm cursor-pointer transition-colors ${
+                        isSelected
+                          ? isDarkMode
+                            ? 'bg-slate-900/80 border-blue-800/70 text-slate-100'
+                            : 'bg-blue-50/30 border-blue-200 text-gray-800'
+                          : isDarkMode
+                            ? 'bg-slate-900/30 border-slate-800 text-slate-500 opacity-60'
+                            : 'bg-gray-50/60 border-gray-100 text-gray-400 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(): void => handleToggleSelectFile(item.filepath)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                        />
+                        <span className="font-medium truncate" title={item.filename}>
+                          {item.filename}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <ArrowRight size={14} className="text-gray-400" />
+                        <span
+                          className={`border px-2 py-0.5 rounded-md font-semibold text-xs ${
+                            isDarkMode
+                              ? 'bg-blue-950/60 text-blue-300 border-blue-800/60'
+                              : 'bg-blue-50 text-blue-700 border-blue-100'
+                          }`}
+                        >
+                          {item.category} 폴더
+                        </span>
+                      </div>
+                    </label>
+                  )
+                })
               )}
             </div>
 
@@ -843,10 +938,11 @@ function App(): ReactElement {
               </button>
               {previewItems.length > 0 && (
                 <button
-                  onClick={handleClean}
-                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
+                  onClick={(): Promise<void> => handleClean(true)}
+                  disabled={selectedFilepaths.length === 0}
+                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white shadow-xs transition-colors"
                 >
-                  바로 정리 시작
+                  선택 항목 정리 ({selectedFilepaths.length}건)
                 </button>
               )}
             </div>

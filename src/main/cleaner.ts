@@ -10,11 +10,13 @@ export interface CleanResult {
   skip: number
   error: number
   logs: string[]
+  canUndo?: boolean
 }
 
 export interface RestoreResult {
   restored: number
   logs: string[]
+  canUndo?: boolean
 }
 
 export interface PreviewItem {
@@ -27,6 +29,16 @@ export interface PreviewResult {
   items: PreviewItem[]
   errorMessage?: string
 }
+
+interface MovedRecord {
+  from: string
+  to: string
+  filename: string
+  targetFolder: string
+}
+
+// 직전 정리 작업에서 이동된 파일들의 경로 기록
+let lastMovedHistory: MovedRecord[] = []
 
 function getUniquePath(folder: string, filename: string): string {
   const ext = path.extname(filename)
@@ -41,7 +53,30 @@ function getUniquePath(folder: string, filename: string): string {
   return targetPath
 }
 
-// 정리 대상 파일을 탐색만 하고 실제로 이동하지는 않는 미리보기 함수
+// 빈 하위 폴더들을 안쪽에서부터 재귀적으로 청소하는 보조 함수
+function cleanEmptyFolders(dirPath: string): void {
+  if (!fs.existsSync(dirPath)) return
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const fullPath = path.join(dirPath, entry.name)
+      cleanEmptyFolders(fullPath)
+    }
+  }
+
+  try {
+    const remaining = fs
+      .readdirSync(dirPath)
+      .filter((name) => !name.startsWith('.') && name.toLowerCase() !== 'desktop.ini')
+    if (remaining.length === 0) {
+      fs.rmSync(dirPath, { recursive: true, force: true })
+    }
+  } catch {
+    // 사용 중이거나 이미 삭제된 경우 무시
+  }
+}
+
 export function scanFiles(
   keywords: string[] = [],
   extensions: string[] = [],
@@ -97,24 +132,36 @@ export function scanFiles(
   return { items }
 }
 
-// scanFiles 결과를 바탕으로 실제 파일 이동을 수행하는 함수
 export function organizeFiles(
   keywords: string[] = [],
   extensions: string[] = [],
   targetFolder?: string,
-  includeUnmatched: boolean = false
+  includeUnmatched: boolean = false,
+  selectedItems?: PreviewItem[]
 ): CleanResult {
   const logs: string[] = []
   const currentTarget = targetFolder && targetFolder.trim() !== '' ? targetFolder : defaultDesktop
   const historyFolder = path.join(currentTarget, '문서 보관함')
 
-  const scanResult = scanFiles(keywords, extensions, targetFolder, includeUnmatched)
+  let moveList: PreviewItem[] = []
 
-  if (scanResult.errorMessage) {
-    return { total: 0, success: 0, skip: 0, error: 0, logs: [scanResult.errorMessage] }
+  // 미리보기 모달에서 체크박스로 선택된 목록이 전달된 경우 해당 목록만 사용
+  if (selectedItems && Array.isArray(selectedItems)) {
+    moveList = selectedItems
+  } else {
+    const scanResult = scanFiles(keywords, extensions, targetFolder, includeUnmatched)
+    if (scanResult.errorMessage) {
+      return {
+        total: 0,
+        success: 0,
+        skip: 0,
+        error: 0,
+        logs: [scanResult.errorMessage],
+        canUndo: lastMovedHistory.length > 0
+      }
+    }
+    moveList = scanResult.items
   }
-
-  const moveList = scanResult.items
 
   if (moveList.length === 0) {
     return {
@@ -122,7 +169,8 @@ export function organizeFiles(
       success: 0,
       skip: 0,
       error: 0,
-      logs: ['선택한 폴더에 정리할 문서가 없습니다.']
+      logs: ['선택한 폴더에 정리할 문서가 없습니다.'],
+      canUndo: lastMovedHistory.length > 0
     }
   }
 
@@ -132,8 +180,16 @@ export function organizeFiles(
     skip = 0,
     errorCount = 0
 
+  const currentMoved: MovedRecord[] = []
+
   for (const { filepath, filename, category } of moveList) {
     try {
+      if (!fs.existsSync(filepath)) {
+        skip += 1
+        logs.push(`[건너뜀] 파일이 존재하지 않습니다: ${filename}`)
+        continue
+      }
+
       const stats = fs.statSync(filepath)
       const mtime = stats.mtime
 
@@ -151,6 +207,12 @@ export function organizeFiles(
 
       fs.renameSync(filepath, destination)
       success += 1
+      currentMoved.push({
+        from: filepath,
+        to: destination,
+        filename,
+        targetFolder: currentTarget
+      })
       logs.push(`[이동 완료] ${filename} -> ${category} 폴더`)
     } catch (unknownError) {
       const err = unknownError as NodeJS.ErrnoException
@@ -164,7 +226,65 @@ export function organizeFiles(
     }
   }
 
-  return { total: moveList.length, success, skip, error: errorCount, logs }
+  if (currentMoved.length > 0) {
+    lastMovedHistory = currentMoved
+  }
+
+  return {
+    total: moveList.length,
+    success,
+    skip,
+    error: errorCount,
+    logs,
+    canUndo: lastMovedHistory.length > 0
+  }
+}
+
+// 직전 정리 작업의 파일들만 원래 자리로 되돌리는 함수
+export function undoLastClean(): RestoreResult {
+  const logs: string[] = []
+
+  if (lastMovedHistory.length === 0) {
+    return { restored: 0, logs: ['되돌릴 직전 작업 기록이 없습니다.'], canUndo: false }
+  }
+
+  let restored = 0
+  const affectedTargets = new Set<string>()
+
+  for (const record of lastMovedHistory) {
+    if (!fs.existsSync(record.to)) {
+      logs.push(`[건너뜀] 파일이 이미 이동되었거나 없습니다: ${record.filename}`)
+      continue
+    }
+
+    const parentDir = path.dirname(record.from)
+    const originalFilename = path.basename(record.from)
+    const destination = getUniquePath(parentDir, originalFilename)
+
+    try {
+      fs.renameSync(record.to, destination)
+      restored += 1
+      affectedTargets.add(record.targetFolder)
+      logs.push(`[직전 되돌리기 완료] ${record.filename}`)
+    } catch (unknownError) {
+      const err = unknownError as NodeJS.ErrnoException
+      logs.push(`[오류] ${record.filename}\n${err.message || String(unknownError)}`)
+    }
+  }
+
+  // 파일이 빠져나간 보관함 내 빈 폴더 정리
+  for (const target of affectedTargets) {
+    const historyFolder = path.join(target, '문서 보관함')
+    if (fs.existsSync(historyFolder)) {
+      cleanEmptyFolders(historyFolder)
+      if (!fs.existsSync(historyFolder)) {
+        logs.push('[정리 완료] 비어있는 문서 보관함 폴더를 삭제했습니다.')
+      }
+    }
+  }
+
+  lastMovedHistory = []
+  return { restored, logs, canUndo: false }
 }
 
 export function restoreFiles(targetFolder?: string): RestoreResult {
@@ -174,7 +294,11 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
   const historyFolder = path.join(currentTarget, '문서 보관함')
 
   if (!fs.existsSync(historyFolder)) {
-    return { restored: 0, logs: ['선택한 폴더 내에 문서 보관함 폴더가 없습니다.'] }
+    return {
+      restored: 0,
+      logs: ['선택한 폴더 내에 문서 보관함 폴더가 없습니다.'],
+      canUndo: lastMovedHistory.length > 0
+    }
   }
 
   let restored = 0
@@ -187,17 +311,6 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
 
       if (entry.isDirectory()) {
         traverseAndRestore(fullPath)
-
-        try {
-          const remaining = fs
-            .readdirSync(fullPath)
-            .filter((name) => !name.startsWith('.') && name.toLowerCase() !== 'desktop.ini')
-          if (remaining.length === 0) {
-            fs.rmSync(fullPath, { recursive: true, force: true })
-          }
-        } catch {
-          // 무시
-        }
       } else if (entry.isFile()) {
         if (entry.name.startsWith('.') || entry.name.toLowerCase() === 'desktop.ini') continue
 
@@ -217,18 +330,14 @@ export function restoreFiles(targetFolder?: string): RestoreResult {
   }
 
   traverseAndRestore(historyFolder)
+  cleanEmptyFolders(historyFolder)
 
-  try {
-    const remainingRoot = fs
-      .readdirSync(historyFolder)
-      .filter((name) => !name.startsWith('.') && name.toLowerCase() !== 'desktop.ini')
-    if (remainingRoot.length === 0) {
-      fs.rmSync(historyFolder, { recursive: true, force: true })
-      logs.push('[정리 완료] 비어있는 문서 보관함 폴더를 삭제했습니다.')
-    }
-  } catch {
-    // 무시
+  if (!fs.existsSync(historyFolder)) {
+    logs.push('[정리 완료] 비어있는 문서 보관함 폴더를 삭제했습니다.')
   }
 
-  return { restored, logs }
+  // 전체 복원 시 해당 폴더와 관련된 직전 히스토리 초기화
+  lastMovedHistory = lastMovedHistory.filter((item) => item.targetFolder !== currentTarget)
+
+  return { restored, logs, canUndo: lastMovedHistory.length > 0 }
 }
