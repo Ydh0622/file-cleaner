@@ -15,7 +15,11 @@ import {
   Sun,
   Check,
   Trash2,
-  Undo2
+  Undo2,
+  Radar,
+  Power,
+  Minimize2,
+  Info
 } from 'lucide-react'
 
 interface CleanStats {
@@ -37,6 +41,13 @@ interface PreviewResult {
   errorMessage?: string
 }
 
+interface CleanResponse extends CleanStats {
+  logs: string[]
+  canUndo?: boolean
+}
+
+type CloseBehavior = 'ask' | 'tray' | 'quit'
+
 const EXTENSION_PRESETS: Array<{ label: string; exts: string[] }> = [
   { label: '문서 세트', exts: ['.pdf', '.docx', '.pptx', '.hwp', '.xlsx', '.txt', '.csv'] },
   { label: '이미지 세트', exts: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'] },
@@ -54,6 +65,17 @@ function App(): ReactElement {
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false)
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
   const [selectedFilepaths, setSelectedFilepaths] = useState<string[]>([])
+
+  const [isWatching, setIsWatching] = useState<boolean>(false)
+
+  // 창 닫기 모달 및 동작 설정 관련 상태
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState<boolean>(false)
+  const [selectedCloseOption, setSelectedCloseOption] = useState<'tray' | 'quit'>('tray')
+  const [dontAskAgain, setDontAskAgain] = useState<boolean>(false)
+  const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>(() => {
+    const saved = localStorage.getItem('cleaner_close_behavior') as CloseBehavior | null
+    return saved === 'tray' || saved === 'quit' ? saved : 'ask'
+  })
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('cleaner_dark_mode')
@@ -101,6 +123,10 @@ function App(): ReactElement {
   }, [isDarkMode])
 
   useEffect((): void => {
+    localStorage.setItem('cleaner_close_behavior', closeBehavior)
+  }, [closeBehavior])
+
+  useEffect((): void => {
     if (targetFolder) {
       localStorage.setItem('cleaner_target_folder', targetFolder)
     }
@@ -117,6 +143,73 @@ function App(): ReactElement {
   useEffect((): void => {
     localStorage.setItem('cleaner_include_unmatched', JSON.stringify(includeUnmatched))
   }, [includeUnmatched])
+
+  useEffect((): void => {
+    if (!targetFolder) return
+    window.electron.ipcRenderer
+      .invoke('toggle-watch', isWatching, keywords, extensions, targetFolder, includeUnmatched)
+      .catch((): void => {
+        // 무시
+      })
+  }, [isWatching, keywords, extensions, targetFolder, includeUnmatched])
+
+  useEffect((): (() => void) => {
+    const removeListener = window.electron.ipcRenderer.on(
+      'auto-clean-triggered',
+      (_event, result: unknown) => {
+        const res = result as CleanResponse
+        setStats({
+          total: res.total,
+          success: res.success,
+          skip: res.skip,
+          error: res.error
+        })
+        setCanUndo(Boolean(res.canUndo))
+        setLogs((prev) => [
+          '[실시간 감지] 새 파일이 자동으로 정리되었습니다.',
+          ...res.logs,
+          ...prev
+        ])
+      }
+    )
+    return (): void => {
+      removeListener()
+    }
+  }, [])
+
+  // 상단 X(닫기) 버튼 클릭 시 백엔드로부터 신호를 받아 처리하는 리스너
+  useEffect((): (() => void) => {
+    const removeCloseListener = window.electron.ipcRenderer.on('window-close-requested', () => {
+      const currentBehavior =
+        (localStorage.getItem('cleaner_close_behavior') as CloseBehavior) || 'ask'
+
+      if (currentBehavior === 'tray') {
+        window.electron.ipcRenderer.invoke('hide-to-tray')
+      } else if (currentBehavior === 'quit') {
+        window.electron.ipcRenderer.invoke('quit-app')
+      } else {
+        setDontAskAgain(false)
+        setIsCloseModalOpen(true)
+      }
+    })
+    return (): void => {
+      removeCloseListener()
+    }
+  }, [])
+
+  const handleConfirmClose = async (): Promise<void> => {
+    if (dontAskAgain) {
+      setCloseBehavior(selectedCloseOption)
+      localStorage.setItem('cleaner_close_behavior', selectedCloseOption)
+    }
+    setIsCloseModalOpen(false)
+
+    if (selectedCloseOption === 'tray') {
+      await window.electron.ipcRenderer.invoke('hide-to-tray')
+    } else {
+      await window.electron.ipcRenderer.invoke('quit-app')
+    }
+  }
 
   const handleSelectFolder = async (): Promise<void> => {
     const selected = (await window.electron.ipcRenderer.invoke('select-folder')) as string | null
@@ -245,7 +338,7 @@ function App(): ReactElement {
   const handleUndo = async (): Promise<void> => {
     setIsLoading(true)
     setStats(null)
-    setLogs(['직전 정리 작업을 되돌립니다...'])
+    setLogs(['최근 정리 작업을 취소합니다...'])
     try {
       const result = await window.electron.ipcRenderer.invoke('undo-clean')
       setStats({ restored: result.restored })
@@ -355,14 +448,55 @@ function App(): ReactElement {
 
       <main className="flex-1 flex flex-col p-3 sm:p-5 md:p-6 min-w-0 h-full overflow-hidden">
         {activeTab === 'clean' && (
-          <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-2.5 sm:gap-3.5">
-            <div className="shrink-0">
-              <h2 className="text-lg sm:text-2xl font-bold tracking-tight">폴더를 깨끗하게</h2>
-              <p
-                className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+          <div className="flex flex-col h-full max-w-5xl w-full mx-auto gap-2.5 sm:gap-3">
+            <div className="shrink-0 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg sm:text-2xl font-bold tracking-tight">폴더를 깨끗하게</h2>
+                <p
+                  className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+                >
+                  지정한 폴더의 어지러운 문서들을 스마트하게 정리해보세요.
+                </p>
+              </div>
+              <div
+                className={`px-3 py-2 rounded-xl border flex items-center gap-2.5 shrink-0 ${
+                  isWatching
+                    ? isDarkMode
+                      ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-slate-300'
+                      : 'bg-white border-gray-200 text-gray-700'
+                }`}
               >
-                지정한 폴더의 어지러운 문서들을 스마트하게 정리해보세요.
-              </p>
+                <Radar
+                  size={16}
+                  className={isWatching ? 'text-emerald-500 animate-spin' : 'text-gray-400'}
+                />
+                <span className="text-xs font-semibold">실시간 자동 정리</span>
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    const nextState = !isWatching
+                    setIsWatching(nextState)
+                    setLogs((prev) => [
+                      nextState
+                        ? '[실시간 감시 시작] 폴더에 새 파일이 생기면 자동으로 정리합니다.'
+                        : '[실시간 감시 종료] 자동 정리를 중지했습니다.',
+                      ...prev
+                    ])
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isWatching ? 'bg-emerald-500' : isDarkMode ? 'bg-slate-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      isWatching ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
 
             <div
@@ -504,7 +638,7 @@ function App(): ReactElement {
                     }`}
                   >
                     <Undo2 size={15} />
-                    <span>되돌리기</span>
+                    <span>실행 취소</span>
                   </button>
                   <button
                     onClick={handleRestore}
@@ -815,11 +949,50 @@ function App(): ReactElement {
                   />
                 </button>
               </div>
+
+              {/* 창 닫기 버튼 동작 설정 영역 */}
+              <div
+                className={`pt-4 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  isDarkMode ? 'border-slate-700' : 'border-gray-100'
+                }`}
+              >
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold mb-0.5">창 닫기(X) 버튼 동작</h3>
+                  <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    우측 상단 닫기 버튼을 눌렀을 때 실행할 기본 동작을 선택합니다.
+                  </p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  {(
+                    [
+                      { value: 'ask', label: '매번 물어보기' },
+                      { value: 'tray', label: '트레이에 숨기기' },
+                      { value: 'quit', label: '완전히 종료' }
+                    ] as Array<{ value: CloseBehavior; label: string }>
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={(): void => setCloseBehavior(option.value)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        closeBehavior === option.value
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : isDarkMode
+                            ? 'bg-slate-700 text-slate-300 border-slate-600 hover:bg-slate-600'
+                            : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
       </main>
 
+      {/* 미리보기 모달 */}
       {isPreviewOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div
@@ -945,6 +1118,164 @@ function App(): ReactElement {
                   선택 항목 정리 ({selectedFilepaths.length}건)
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 창 닫기(X) 동작 선택 모달 */}
+      {isCloseModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div
+            className={`rounded-3xl shadow-2xl border w-full max-w-md p-6 flex flex-col gap-5 transition-colors ${
+              isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-100'
+                : 'bg-white border-gray-100 text-gray-800'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div
+                className={`p-3 rounded-2xl ${
+                  isDarkMode ? 'bg-blue-950/80 text-blue-400' : 'bg-blue-50 text-blue-600'
+                }`}
+              >
+                <Power size={24} />
+              </div>
+              <button
+                onClick={(): void => setIsCloseModalOpen(false)}
+                className={`p-1.5 rounded-xl transition-colors ${
+                  isDarkMode
+                    ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-bold tracking-tight mb-1">프로그램을 닫을까요?</h3>
+              <p
+                className={`text-xs sm:text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}
+              >
+                원하시는 닫기 동작을 선택해 주세요.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={(): void => setSelectedCloseOption('tray')}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
+                  selectedCloseOption === 'tray'
+                    ? isDarkMode
+                      ? 'bg-blue-950/30 border-blue-500'
+                      : 'bg-blue-50/50 border-blue-500'
+                    : isDarkMode
+                      ? 'bg-slate-900/40 border-slate-700 hover:border-slate-600'
+                      : 'bg-white border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div
+                  className={`p-3 rounded-xl shrink-0 ${
+                    selectedCloseOption === 'tray'
+                      ? isDarkMode
+                        ? 'bg-blue-900/60 text-blue-300'
+                        : 'bg-blue-100 text-blue-600'
+                      : isDarkMode
+                        ? 'bg-slate-800 text-slate-400'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  <Minimize2 size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-sm sm:text-base mb-0.5">트레이에 숨기기</div>
+                  <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    백그라운드에서 실시간 자동 정리 상태를 유지합니다.
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(): void => setSelectedCloseOption('quit')}
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
+                  selectedCloseOption === 'quit'
+                    ? isDarkMode
+                      ? 'bg-blue-950/30 border-blue-500'
+                      : 'bg-blue-50/50 border-blue-500'
+                    : isDarkMode
+                      ? 'bg-slate-900/40 border-slate-700 hover:border-slate-600'
+                      : 'bg-white border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div
+                  className={`p-3 rounded-xl shrink-0 ${
+                    selectedCloseOption === 'quit'
+                      ? isDarkMode
+                        ? 'bg-blue-900/60 text-blue-300'
+                        : 'bg-blue-100 text-blue-600'
+                      : isDarkMode
+                        ? 'bg-slate-800 text-slate-400'
+                        : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  <Power size={20} />
+                </div>
+                <div>
+                  <div className="font-bold text-sm sm:text-base mb-0.5">프로그램 종료</div>
+                  <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                    실행 중인 File Cleaner를 완전히 종료합니다.
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div
+              className={`px-3.5 py-2.5 rounded-xl flex items-center gap-2 text-xs ${
+                isDarkMode ? 'bg-slate-900/60 text-slate-400' : 'bg-gray-100 text-gray-500'
+              }`}
+            >
+              <Info size={14} className="shrink-0" />
+              <span>
+                이 선택은 맞춤 설정의 &apos;창 닫기 버튼 동작&apos;에서 언제든 변경할 수 있습니다.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={dontAskAgain}
+                  onChange={(e): void => setDontAskAgain(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+                  다시 이 메시지 표시하지 않기
+                </span>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(): void => setIsCloseModalOpen(false)}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold border transition-colors ${
+                    isDarkMode
+                      ? 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                      : 'border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmClose}
+                  className="px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors"
+                >
+                  확인
+                </button>
+              </div>
             </div>
           </div>
         </div>
