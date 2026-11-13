@@ -1,0 +1,108 @@
+{
+  "nodes": [
+    {
+      "id": "node-legend",
+      "type": "text",
+      "x": -480,
+      "y": -360,
+      "width": 960,
+      "height": 120,
+      "color": "5",
+      "text": "### File Cleaner 유지보수 아키텍처 맵\n* **빨강 (중요도 상):** 핵심 로직 및 UI (자주 수정하지만 오타 시 앱 동작에 직접 영향)\n* **주황 (중요도 중):** 프론트엔드와 백엔드를 이어주는 다리 및 창 제어 (새 기능 추가 시 수정)\n* **초록/노랑 (중요도 하):** 초기 설정 및 .exe 빌드 설정 (평소엔 건드리지 않음)"
+    },
+    {
+      "id": "node-app",
+      "type": "text",
+      "x": -480,
+      "y": -180,
+      "width": 380,
+      "height": 420,
+      "color": "1",
+      "text": "## 1. 화면 및 상태 관리\n`src/renderer/src/App.tsx`\n\n* **중요도:** ★★★ (최상)\n* **수정 영향도:** 낮음 (화면 디자인과 버튼에만 영향, 실제 파일 이동 기능은 망가지지 않음)\n\n### 주요 담당 역할\n1. **UI 렌더링:** 파일 정리 탭, 맞춤 설정 탭, 미리보기 모달, 닫기 확인 모달\n2. **사용자 설정 저장 (localStorage):** 키워드, 확장자, 대상 폴더, 다크모드, 닫기 동작\n3. **백엔드 호출 (invoke):** 버튼 클릭 시 메인 프로세스로 명령 전달"
+    },
+    {
+      "id": "node-preload",
+      "type": "text",
+      "x": -30,
+      "y": -80,
+      "width": 250,
+      "height": 220,
+      "color": "4",
+      "text": "## 2. 보안 통신 다리\n`src/preload/index.ts`\n\n* **중요도:** ★☆☆ (하)\n* **수정 영향도:** 절대 수정 금지 (건드리면 화면과 백엔드 통신이 끊어짐)"
+    },
+    {
+      "id": "node-main",
+      "type": "text",
+      "x": 290,
+      "y": -180,
+      "width": 380,
+      "height": 420,
+      "color": "2",
+      "text": "## 3. 메인 프로세스 & 시스템 제어\n`src/main/index.ts`\n\n* **중요도:** ★★☆ (중상)\n* **수정 영향도:** 높음 (창 크기, 트레이 아이콘, 백그라운드 감시 및 통신 채널 제어)\n\n### 주요 담당 역할\n1. **창 & 트레이 생성:** createWindow(), createTray()\n2. **통신 창구 (ipcMain.handle):** 폴더 열기, 미리보기, 파일 정리, 복원, 종료\n3. **실시간 폴더 감시:** fs.watch로 새 파일 감지 후 1.5초 뒤 자동 정리 실행"
+    },
+    {
+      "id": "node-cleaner",
+      "type": "text",
+      "x": 740,
+      "y": -180,
+      "width": 400,
+      "height": 420,
+      "color": "1",
+      "text": "## 4. 실제 파일 이동/복원 엔진\n`src/main/cleaner.ts`\n\n* **중요도:** ★★★ (최상)\n* **수정 영향도:** 매우 높음 (실제 내 컴퓨터의 파일을 옮기고 폴더를 지우는 핵심 엔진)\n\n### 4대 핵심 함수\n1. **scanFiles():** 파일을 옮기지 않고 정리 대상 목록만 스캔\n2. **organizeFiles():** 문서 보관함 하위 폴더 생성 및 파일 이동\n3. **undoLastClean():** 방금 옮긴 파일만 원상복구\n4. **restoreFiles():** 보관함 전체 복구 및 빈 폴더 삭제"
+    },
+    {
+      "id": "node-config",
+      "type": "text",
+      "x": -480,
+      "y": 300,
+      "width": 500,
+      "height": 230,
+      "color": "3",
+      "text": "## 5. 아이콘 및 빌드/환경 설정 파일들\n* **중요도:** ★☆☆ (배포할 때만 확인)\n\n* **electron-builder.yml:** .exe 설치 파일 이름 및 아이콘 경로 설정\n* **resources/icon.png:** 앱 아이콘 및 트레이 아이콘 원본 이미지\n* **src/renderer/index.html:** 프로그램 상단 창 제목\n* **tsconfig.web.json:** TypeScript 문법 검사 설정"
+    },
+    {
+      "id": "node-howto",
+      "type": "text",
+      "x": 80,
+      "y": 300,
+      "width": 1060,
+      "height": 230,
+      "color": "6",
+      "text": "## [유지보수 치트키] 나중에 뭔가를 고치고 싶다면 어디를 열어야 할까?\n\n1. **글자, 버튼 디자인, 색상, 기본 키워드/확장자 프리셋을 바꾸고 싶다** -> `src/renderer/src/App.tsx`만 수정!\n2. **보관함 폴더 이름(문서 보관함, 기타 문서)이나 파일명 날짜 규칙을 바꾸고 싶다** -> `src/main/cleaner.ts`만 수정!\n3. **프로그램 처음 켰을 때 창 크기(900x650)나 실시간 감지 대기 시간(1.5초)을 바꾸고 싶다** -> `src/main/index.ts`만 수정!\n4. **수정한 코드를 테스트하고 싶다** -> 터미널에 `npm run dev` / **다시 .exe로 뽑고 싶다** -> `npm run build:win`"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "fromNode": "node-app",
+      "fromSide": "right",
+      "toNode": "node-preload",
+      "toSide": "left",
+      "label": "invoke (명령 요청)"
+    },
+    {
+      "id": "edge-2",
+      "fromNode": "node-preload",
+      "fromSide": "right",
+      "toNode": "node-main",
+      "toSide": "left",
+      "label": "ipcMain.handle"
+    },
+    {
+      "id": "edge-3",
+      "fromNode": "node-main",
+      "fromSide": "right",
+      "toNode": "node-cleaner",
+      "toSide": "left",
+      "label": "파일 작업 함수 호출"
+    },
+    {
+      "id": "edge-4",
+      "fromNode": "node-cleaner",
+      "fromSide": "bottom",
+      "toNode": "node-app",
+      "toSide": "bottom",
+      "label": "결과 통계(stats) 및 작업 로그(logs) 반환"
+    }
+  ]
+}
