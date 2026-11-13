@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: file-cleaner
+appId: com.filecleaner.app
+productName: File Cleaner
 directories:
   buildResources: build
 files:
@@ -12,7 +12,8 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: file-cleaner
+  executableName: FileCleaner
+  icon: resources/icon.png
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
