@@ -1,34 +1,95 @@
-# file-cleaner
+# File Cleaner
 
-An Electron application with React and TypeScript
+**바탕화면과 다운로드 폴더의 어지러운 파일들을 키워드와 확장자 규칙에 따라 자동으로 분류하고 정리해 주는 Windows 데스크톱 유틸리티 애플리케이션입니다.**
 
-## Recommended IDE Setup
+파일의 수정 날짜(`YYYY-MM`)와 파일명 내 키워드를 분석하여 계층형 폴더 구조로 자동 정리하며, 미리보기(Dry Run), 실행 취소(Undo), 실시간 폴더 감시(`fs.watch`) 및 시스템 트레이 백그라운드 실행을 지원합니다.
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+---
 
-## Project Setup
+## 주요 기능
 
-### Install
+### 1. 스마트 파일 분류 및 정리
+* **키워드 및 확장자 매칭:** 사용자가 지정한 키워드(예: `최종`, `수정`, `완성`)와 확장자 규칙에 맞춰 파일을 `문서 보관함 / [키워드] / [YYYY-MM]` 하위 폴더로 자동 이동합니다.
+* **날짜 접두사 및 중복 방지:** 파일 수정일을 기준으로 파일명 앞에 `YYYY-MM-DD_` 접두사를 자동으로 부여하며, 동일 이름의 파일이 존재할 경우 `_1`, `_2` 번호를 붙여 덮어쓰기 사고를 방지합니다.
+* **키워드 미포함 문서 정리:** 파일명에 지정된 키워드가 없더라도 확장자가 일치하면 `기타 문서` 폴더로 묶어서 한 번에 정리할 수 있는 옵션을 제공합니다.
 
-```bash
-$ npm install
+### 2. 안전한 사전 검증 및 복원 시스템
+* **정리 대상 미리보기 (Dry Run):** 실제 파일이 이동하기 전에 어떤 파일이 어느 폴더로 분류될지 모달 창에서 미리 확인하고, 체크박스를 통해 원하는 파일만 선택적으로 정리할 수 있습니다.
+* **실행 취소 (Undo):** 직전 정리 작업의 이동 경로 히스토리를 기억하여, 방금 이동한 파일들만 즉시 원래 위치로 되돌립니다.
+* **전체 복원 및 빈 폴더 청소:** `문서 보관함` 내부의 모든 파일을 원래 폴더로 복구하며, 파일 이동 후 남은 빈 하위 폴더들을 재귀적으로 깔끔하게 정리합니다.
+
+### 3. 백그라운드 자동화 및 사용자 편의성
+* **실시간 폴더 자동 정리 (`fs.watch`):** 대상 폴더에 새 파일이 다운로드되거나 생성될 때 이를 실시간으로 감지하여(브라우저 임시 다운로드 파일 제외, 1.5초 디바운스 적용) 백그라운드에서 즉시 정리합니다.
+* **시스템 트레이(Tray) 및 닫기 동작 제어:** 창 닫기(X) 클릭 시 트레이 아이콘으로 숨겨 백그라운드 상태를 유지하거나 완전히 종료할 수 있는 선택 모달 및 설정 연동을 지원합니다.
+* **원클릭 확장자 프리셋:** 문서, 이미지, 압축파일, 미디어 세트를 클릭 한 번으로 추가하거나 토글하여 해제할 수 있습니다.
+* **다크 모드 및 설정 자동 저장:** 라이트/다크 테마 전환과 모든 사용자 맞춤 규칙이 `localStorage`에 실시간으로 저장됩니다.
+
+---
+
+## 기술 스택
+
+| 구분 | 사용 기술 |
+| :--- | :--- |
+| **Core & Desktop** | Electron, Node.js (`fs`, `path`, `os`), Electron Builder |
+| **Frontend (Renderer)** | React 19, TypeScript, Vite (`electron-vite`) |
+| **Styling & UI** | Tailwind CSS, Lucide React |
+| **State & IPC** | Electron IPC (`ipcMain` / `ipcRenderer`), Web Storage API (`localStorage`) |
+
+---
+
+## 프로젝트 구조
+
+```text
+file-cleaner/
+├── resources/
+│   └── icon.png                 # 앱 및 시스템 트레이 아이콘
+├── src/
+│   ├── main/
+│   │   ├── index.ts             # Electron 메인 프로세스, 트레이, 실시간 감시(fs.watch) 및 IPC 핸들러
+│   │   └── cleaner.ts           # 파일 스캔, 분류 이동, 직전 실행 취소(Undo), 전체 복원 핵심 로직
+│   ├── preload/
+│   │   ├── index.ts             # Context Bridge 기반 Preload 스크립트
+│   │   └── index.d.ts           # Renderer 환경 타입 정의
+│   └── renderer/
+│       ├── index.html           # 엔트리 HTML
+│       └── src/
+│           ├── App.tsx          # 메인 대시보드, 맞춤 설정, 미리보기 및 닫기 동작 모달 UI
+│           └── main.tsx         # React 렌더링 엔트리
+├── electron-builder.yml         # Windows 설치 파일(.exe) 패키징 설정
+└── package.json
 ```
 
-### Development
+---
+
+## 시작하기 (설치 및 실행)
+
+### 1. 패키지 설치
 
 ```bash
-$ npm run dev
+npm install
 ```
 
-### Build
+### 2. 개발 서버 실행
 
 ```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
+npm run dev
 ```
+
+### 3. Windows 실행 파일(`.exe`) 빌드
+
+```bash
+npm run build:win
+```
+
+빌드가 완료되면 `dist/` 폴더 내에 두 가지 실행 파일이 생성됩니다.
+* **`dist/file-cleaner-1.0.0-setup.exe`**: 바탕화면 바로가기 생성 및 정식 설치를 지원하는 인스톨러
+* **`dist/win-unpacked/FileCleaner.exe`**: 설치 없이 즉시 실행 가능한 포터블 실행 파일
+
+---
+
+## 사용 방법
+
+1. **[파일 정리] 탭**에서 정리할 대상 폴더를 지정합니다. (기본값: 바탕화면)
+2. **[맞춤 설정] 탭**에서 분류 기준이 될 파일명 키워드와 대상 확장자를 등록합니다. (프리셋 버튼으로 일괄 등록 가능)
+3. **미리보기** 버튼을 눌러 이동할 파일 목록을 확인하고, 제외할 파일은 체크박스를 해제한 뒤 정리를 시작합니다.
+4. 상단의 **실시간 자동 정리** 스위치를 켜고 창을 트레이로 숨겨두면, 새로운 파일이 생길 때마다 백그라운드에서 자동으로 폴더를 깨끗하게 유지합니다.
